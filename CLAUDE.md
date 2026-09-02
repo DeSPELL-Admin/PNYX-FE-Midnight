@@ -90,3 +90,10 @@ src/hooks/contract/useFinalizeTournament.ts      grant → join → prove → su
   wallet-free via `indexerPublicDataProvider` (call `setNetworkId()` FIRST or address decoding breaks).
 - Prices are atomic units as strings end-to-end (1 tNIGHT = 1e6 units); the FE only formats, never
   converts for the transfer value.
+- `/market/orders/[id]/data` (buyer-only, `dynamic ssr:false`): downloads the dataset, parses v1/v2
+  (`lib/market/dataset.ts`), verifies every row with `checkRowCommit` + sha256 vs `datasetHash`, and
+  renders either the single-row bracket grid or the multi-row dashboard (`lib/market/analytics.ts` —
+  pure LWA decoding: `bracket = winnerBlock ++ loserBlock` recursively, `[0]` = champion; a match at
+  block size L is `L[0]` vs `R[0]`). Names come from v2 fields → `/orders/:id/catalog` → `#<id>`;
+  they are informational, never part of the commitment. `/market` shows "My purchases" via
+  `useMyOrders` when the wallet is connected.

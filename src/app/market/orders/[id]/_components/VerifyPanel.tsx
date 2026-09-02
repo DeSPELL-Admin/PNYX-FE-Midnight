@@ -18,30 +18,12 @@ import { useAccount } from '~/hooks/wallet';
 import { api } from '~/lib/api';
 import type { MarketOrder } from '~/lib/api/market';
 import { sha256Hex } from '~/lib/crypto/sha256';
+import { parseDataset, type DatasetRow } from '~/lib/market/dataset';
 import { fetchLicense, fetchSampleCount, checkRowCommit, type OnChainLicense } from '~/lib/midnight/license';
 
 interface VerifyPanelProps {
   chainId: number;
   order: MarketOrder;
-}
-
-// datasetJson 정규형(market-dev-plan.md §1) — 로우별 재판정에 필요한 필드만 사용한다.
-// B안(브라켓 완전 봉인) — bracket 은 로우 커밋 재계산에 필수. 없는 로우는 구버전 데이터셋으로 간주해
-// on-chain commitment 검사를 skip 한다(옵셔널로 둔 이유).
-interface DatasetRow {
-  tournamentId: number;
-  itemId: number;
-  segment: string;
-  salt: string;
-  bracket?: number[];
-}
-
-interface DatasetFile {
-  v: number;
-  tournamentId: number;
-  orderId: string;
-  rowCount: number;
-  rows: DatasetRow[];
 }
 
 type CheckStatus = 'pass' | 'fail' | 'skipped';
@@ -74,13 +56,14 @@ export default function VerifyPanel({ chainId, order }: VerifyPanelProps) {
     try {
       const fileHash = await sha256Hex(bytes);
 
-      let parsed: DatasetFile | null = null;
+      // 파싱 실패(위변조 파일 데모)는 throw 대신 로우 0개로 떨어뜨린다 — 그래야 integrity=fail 이
+      // 에러 메시지가 아니라 체크 표에 그대로 보인다.
+      let rows: DatasetRow[] = [];
       try {
-        parsed = JSON.parse(new TextDecoder().decode(bytes)) as DatasetFile;
+        rows = parseDataset(bytes).rows;
       } catch {
-        parsed = null;
+        rows = [];
       }
-      const rows = parsed?.rows ?? [];
 
       // 지갑 없이도(구매자 본인이 아니어도) 온체인에서 직접 License 를 조회한다 — 서버 신뢰 불필요.
       const [fetchedLicense, currentSampleCount] = await Promise.all([
@@ -91,7 +74,8 @@ export default function VerifyPanel({ chainId, order }: VerifyPanelProps) {
       setSampleCount(currentSampleCount);
 
       // B안 — bracket 없는 로우가 하나라도 있으면(구버전 데이터셋) 봉인 검증 자체가 불가능하므로 skip.
-      const bracketSealSupported = rows.length > 0 && rows.every((r) => Array.isArray(r.bracket));
+      // parseDataset 은 없는 bracket 을 빈 배열로 정규화하므로 "비었는지"로 판정한다.
+      const bracketSealSupported = rows.length > 0 && rows.every((r) => r.bracket.length > 0);
 
       let rowChecks: boolean[] = [];
       if (fetchedLicense && bracketSealSupported) {
@@ -102,7 +86,7 @@ export default function VerifyPanel({ chainId, order }: VerifyPanelProps) {
               itemId: row.itemId,
               segment: row.segment,
               salt: row.salt,
-              bracket: row.bracket as number[],
+              bracket: row.bracket,
             }).catch(() => false),
           ),
         );
@@ -185,7 +169,8 @@ export default function VerifyPanel({ chainId, order }: VerifyPanelProps) {
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      // Firefox/Safari 는 click() 직후 동기 revoke 하면 저장이 취소될 수 있다 — 한 박자 늦춘다.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
 
       const buffer = await blob.arrayBuffer();
       await runVerification(new Uint8Array(buffer));

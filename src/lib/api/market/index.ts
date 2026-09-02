@@ -49,6 +49,25 @@ export interface MarketOrder {
   updatedAt: string;
 }
 
+/** 구매자 전용 카탈로그 — 데이터셋의 itemId 에 이름/이미지를 붙이기 위한 참고 정보(커밋 대상 아님). */
+export interface MarketOrderCatalog {
+  tournamentId: number;
+  tournamentTitle: string;
+  items: { itemId: number; name: string; imageName: string }[];
+}
+
+/** `GET /chains/:chainId/market/orders` — 내 주문 목록(최신순). */
+export async function getMyOrders(chainId: number): Promise<MarketOrder[]> {
+  const res = await apiGet<ApiResponse<MarketOrder[]>>(`/chains/${chainId}/market/orders`);
+  return res.data;
+}
+
+/** `GET /chains/:chainId/market/orders/:orderId/catalog` — 주문 소유자만. 아이템 이름·이미지 참고 정보. */
+export async function getOrderCatalog(chainId: number, orderId: string): Promise<MarketOrderCatalog> {
+  const res = await apiGet<ApiResponse<MarketOrderCatalog>>(`/chains/${chainId}/market/orders/${orderId}/catalog`);
+  return res.data;
+}
+
 /** `GET /chains/:chainId/market/products` — 판매 가능한 토너먼트 상품 목록. */
 export async function getProducts(chainId: number): Promise<MarketProduct[]> {
   const res = await apiGet<ApiResponse<MarketProduct[]>>(`/chains/${chainId}/market/products`);

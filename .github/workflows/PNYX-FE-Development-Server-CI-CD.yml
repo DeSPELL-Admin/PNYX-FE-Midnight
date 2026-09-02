@@ -6,7 +6,7 @@ on:
       - develop
 
 env:
-  PROJECT_NAME: PNYX-FE
+  PROJECT_NAME: PNYX-FE-Midnight
 
 jobs:
   "Build-And-Deploy":
@@ -35,7 +35,7 @@ jobs:
     if: always()
     needs: "Build-And-Deploy"
     # runs-on: ubuntu-latest
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Get short SHA
         id: vars
@@ -47,7 +47,7 @@ jobs:
           webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
           nocontext: true
           status: ${{ needs.Build-And-Deploy.result }}
-          title: '${{ env.PROJECT_NAME }} Development CI/CD Pipeline'
+          title: "${{ env.PROJECT_NAME }} Development CI/CD Pipeline"
           description: |
             **Status: ${{ needs.Build-And-Deploy.result }}**
             **Event: ${{ github.event_name }}**
@@ -74,4 +74,4 @@ jobs:
 
             **Triggered by**
             [${{ github.actor }}](https://github.com/${{ github.actor }})
-          username: 'Github Actions'
+          username: "Github Actions"

@@ -50,9 +50,12 @@ docs/
 # claude code (local agent state)
 .claude/
 
-# compiled contract assets are synced from ../PNYX-Contract (scripts/sync-contract.sh)
-public/zk/
-src/midnight/contract/*/
+# compiled contract assets are synced from ../PNYX-Contract (scripts/sync-contract.sh).
+# 독립 레포로 분리돼 CI 에는 sibling PNYX-Contract 가 없으므로, 빌드/런타임에
+# 필요한 생성물을 커밋해 self-contained 하게 유지한다:
+#   src/midnight/contract/** : webpack 이 import (없으면 빌드 실패)
+#   public/zk/**             : 브라우저가 런타임에 fetch (없으면 프루빙 404)
+# 컨트랙트 재컴파일 시 scripts/sync-contract.sh 재실행 후 다시 커밋할 것.
 
 # pnpm 전용 프로젝트 — npm lockfile 재생성 방지
 /package-lock.json

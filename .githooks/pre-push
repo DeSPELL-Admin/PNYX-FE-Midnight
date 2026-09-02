@@ -1,0 +1,12 @@
+#!/bin/sh
+# 푸시 전 타입체크를 강제한다. 타입 에러가 있으면 푸시를 막는다.
+# 활성화: `pnpm install` 시 package.json 의 prepare 훅이
+#   git config core.hooksPath .githooks
+# 를 실행해 자동으로 연결된다.
+echo "[pre-push] running pnpm typecheck..."
+if ! pnpm typecheck; then
+  echo "[pre-push] ❌ 타입 에러로 푸시를 중단합니다. 'pnpm typecheck' 로 확인 후 다시 푸시하세요."
+  echo "[pre-push]    (긴급 시 우회: git push --no-verify)"
+  exit 1
+fi
+echo "[pre-push] ✅ 타입체크 통과"

@@ -1,0 +1,33 @@
+# Docker 빌드 컨텍스트에서 제외할 항목.
+# 목적: 컨텍스트 전송량 축소 + COPY . . 레이어 캐시 안정화(무관한 변경의 캐시 무효화 방지).
+
+# 의존성/빌드 산출물 — 이미지 안에서 새로 생성하므로 컨텍스트에 불필요
+node_modules
+.next
+out
+
+# VCS / 로컬 메타
+.git
+.gitignore
+.DS_Store
+
+# 로컬 에이전트·툴 상태
+.claude
+.omc
+docs
+
+# 로그 / 커버리지 / 기타
+*.log
+npm-debug.log*
+coverage
+.vercel
+*.pem
+
+# 도커 관련 파일 자체 (이미지에 불필요, COPY 캐시 안정화)
+Dockerfile
+.dockerignore
+README.md
+
+# 주의: .env* 는 의도적으로 제외하지 않는다.
+#  서버 CI 가 워크스페이스에 .env 를 생성하고 next build 가 빌드타임에 이를 읽어
+#  NEXT_PUBLIC_* 를 번들에 인라인하므로, 제외하면 환경변수가 비게 된다.

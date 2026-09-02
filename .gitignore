@@ -53,3 +53,6 @@ docs/
 # compiled contract assets are synced from ../PNYX-Contract (scripts/sync-contract.sh)
 public/zk/
 src/midnight/contract/*/
+
+# pnpm 전용 프로젝트 — npm lockfile 재생성 방지
+/package-lock.json

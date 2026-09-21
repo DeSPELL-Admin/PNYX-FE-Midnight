@@ -13,10 +13,12 @@ import Button from '~/components/ui/Button';
 import { api } from '~/lib/api';
 import type { MarketOrder } from '~/lib/api/market';
 import { formatTNight } from '../../../_lib/format';
+import { takePendingPaymentTx } from '~/hooks/market/pendingPaymentTx';
 
 export default function ManualPayCard({ chainId, order, onPaid }: { chainId: number; order: MarketOrder; onPaid: () => void }) {
   const tMarket = useTranslations('market');
-  const [txId, setTxId] = useState('');
+  // 자동 결제가 송금까지는 마쳤는데 BE 기록만 실패한 경우 useBuyDataset 이 남긴 txId 를 프리필 — 재송금 방지.
+  const [txId, setTxId] = useState(() => takePendingPaymentTx(order.orderId) ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [copied, setCopied] = useState<'address' | 'amount' | null>(null);
 

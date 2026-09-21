@@ -61,7 +61,12 @@ export async function payOperator(
       throw new Error(`wallet transfer failed — makeTransfer: ${describe(e)} / makeIntent: ${describe(e2)}`);
     }
   }
-  await api.submitTransaction(tx);
+  // txId 는 반드시 submit *전에* 뽑는다 — 지갑이 돌려준 직렬화가 우리 ledger 버전과 안 맞아
+  // deserialize 가 던지면, 송금은 이미 나갔는데 txId 만 잃어 주문이 CREATED(수동 결제)로 남는
+  // 최악의 상태가 된다. 여기서 실패하면 돈이 나가기 전에 멈춘다.
+  const txId = Transaction.deserialize<SignatureEnabled, Proof, Binding>('signature', 'proof', 'binding', fromHex(tx)).identifiers()[0];
+  if (!txId) throw new Error('wallet transaction has no identifier');
 
-  return Transaction.deserialize<SignatureEnabled, Proof, Binding>('signature', 'proof', 'binding', fromHex(tx)).identifiers()[0];
+  await api.submitTransaction(tx);
+  return txId;
 }

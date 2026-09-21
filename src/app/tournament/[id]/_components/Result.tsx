@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { useQueryClient } from '@tanstack/react-query';
 import Button from '~/components/ui/Button';
@@ -28,9 +28,11 @@ interface ResultProps {
     // LWA 결과 (임시 디버그용)
     finalArray?: number[];
     finalHex?: string;
+    /** 피드에서 현재 보이는 게임인지 — 보이지 않는 완료 게임은 grant 를 미리 보내지 않는다(온체인 비용). */
+    isActive?: boolean;
 }
 
-export default function Result({ tournamentId, winner, onRetry, finalArray, finalHex }: ResultProps) {
+export default function Result({ tournamentId, winner, onRetry, finalArray, finalHex, isActive = true }: ResultProps) {
     const router = useRouter();
     const tTournament = useTranslations('tournament');
     const tCommon = useTranslations('common');
@@ -38,6 +40,8 @@ export default function Result({ tournamentId, winner, onRetry, finalArray, fina
     const [txStatus, setTxStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
     // 서버에서 무효화된 이어하기(stale) 여부 — true 면 Submit 대신 안내 + "새 게임 시작" 패널을 띄운다.
     const [isStale, setIsStale] = useState(false);
+    // BE finalize-confirm 이 재시도 끝에 실패 — 투표는 온체인이지만 포인트 반영이 늦을 수 있음을 알린다.
+    const [confirmFailed, setConfirmFailed] = useState(false);
 
     const chainId = useChainId();
     const { address } = useAccount();
@@ -69,16 +73,13 @@ export default function Result({ tournamentId, winner, onRetry, finalArray, fina
         return String(err) || tError('unknownError');
     }, [tError]);
 
-    const { finalizeTournament, phase, txId } = useFinalizeTournament(chainId, () => {
+    const { finalizeTournament, prepareFinalize, phase } = useFinalizeTournament(chainId, () => {
+        // 트랜잭션 제출 직후 — 투표는 이미 온체인이므로 여기서 성공 화면으로 전환한다.
+        // 포인트 반영(BE confirm)과 escrow 는 백그라운드로 이어지고 `phase` 가 'done' 이 되면 끝난다.
         setTxStatus('success');
         // 온체인 제출 성공 → 저장된 진행 상태 삭제 (이어하기 목록에서 제거)
         removeGameProgress(address, chainId, Number(tournamentId));
         fireCelebrationConfetti();
-        // finalize 후 서버측 상태 동기화: 리스트의 per-user `status` 가 completed 로 뒤집히고
-        // 포인트/세션(/me) 잔액이 갱신되도록 관련 쿼리를 무효화한다.
-        queryClient.invalidateQueries({ queryKey: tournamentKeys.all });
-        // 포인트는 세션 쿼리(authSessionKey)에 통합 — 세션 무효화로 함께 갱신된다.
-        queryClient.invalidateQueries({ queryKey: authSessionKey(address) });
     }, ({ error }) => {
         toast({
             variant: "destructive",
@@ -86,7 +87,31 @@ export default function Result({ tournamentId, winner, onRetry, finalArray, fina
             description: resolveErrorMessage(error),
         });
         setTxStatus('error');
+    }, ({ confirmed }) => {
+        if (!confirmed) setConfirmFailed(true);
+        // BE finalize-confirm 까지 끝난 뒤 서버측 상태 동기화: 리스트의 per-user `status` 가 completed 로
+        // 뒤집히고 포인트/세션(/me) 잔액이 갱신되도록 관련 쿼리를 무효화한다.
+        queryClient.invalidateQueries({ queryKey: tournamentKeys.all });
+        // 포인트는 세션 쿼리(authSessionKey)에 통합 — 세션 무효화로 함께 갱신된다.
+        queryClient.invalidateQueries({ queryKey: authSessionKey(address) });
     })
+
+    // Result 화면에 도착하자마자 grant 요청과 세션 준비를 시작한다 — 사용자가 우승자를 보는 동안
+    // BE 증명·블록 대기(~30s)가 흘러가므로 Submit 시점엔 증명만 남는다. 같은 브라켓이면 한 번만 보낸다.
+    // 의존성은 값이 안정적인 원시 타입만 — finalArray 는 렌더마다 새 배열이라 넣으면 매 렌더 재실행된다.
+    const bracketSize = finalArray?.length ?? 0;
+    useEffect(() => {
+        if (!isActive || txStatus !== 'idle' || isStale || !finalHex || bracketSize === 0) return;
+        prepareFinalize({
+            tournamentId: Number(tournamentId),
+            tournamentData: finalHex as `0x${string}`,
+            bracketSize,
+        });
+    }, [isActive, txStatus, isStale, finalHex, bracketSize, tournamentId, prepareFinalize]);
+
+    // 성공 화면에서 confirm/escrow 가 아직 진행 중인지 — 포인트 "반영 중" 표시용
+    const isSettling = txStatus === 'success' && phase !== 'done';
+    const settleNote = isSettling ? tTournament('pointsPending') : confirmFailed ? tTournament('pointsDelayed') : '';
 
     const handleSendTransaction = useCallback(async () => {
         // 제출할 데이터가 없으면(우승자/LWA 결과 누락) 조용히 return 하지 않고 안내한다.
@@ -137,16 +162,14 @@ export default function Result({ tournamentId, winner, onRetry, finalArray, fina
             });
             setTxStatus('error');
         }
-    }, [winner, finalHex, tournamentId, finalizeTournament, toast, tError, resolveErrorMessage]);
+    }, [winner, finalHex, finalArray, tournamentId, finalizeTournament, toast, tError, resolveErrorMessage]);
 
     const phaseLabel = (p: FinalizePhase) => {
         switch (p) {
             case 'granting': return tTournament('phaseGranting');
             case 'joining': return tTournament('phaseJoining');
             case 'proving': return tTournament('phaseProving');
-            case 'submitting': return tTournament('phaseSubmitting');
             case 'confirming': return tTournament('phaseConfirming');
-            case 'escrowing': return tTournament('phaseEscrowing');
             default: return tCommon('submit');
         }
     };
@@ -231,6 +254,13 @@ export default function Result({ tournamentId, winner, onRetry, finalArray, fina
                     {/* Transaction 성공 후: Home, Retry, Champion 버튼 등장 */}
                     {txStatus === 'success' && (
                         <div className="flex flex-col w-full justify-center items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                            {/* aria-live 영역은 항상 마운트해 두고 텍스트만 바꾼다(스크린리더가 변화를 안정적으로 읽도록) */}
+                            <p
+                                className={`text-center text-[11px] text-brand-primary-300 ${isSettling ? 'animate-pulse motion-reduce:animate-none' : ''} ${settleNote ? '' : 'hidden'}`}
+                                aria-live="polite"
+                            >
+                                {settleNote}
+                            </p>
 
                             <div className="flex items-center justify-center gap-3 w-full">
                                 <Button variant="ctaBlack" className="gap-1 flex-1 rounded-[8px]" onClick={() => router.push(`/hall/${tournamentId}`)}>

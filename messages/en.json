@@ -249,10 +249,10 @@
     "phaseGranting": "CHECKING ELIGIBILITY…",
     "phaseJoining": "LOADING CONTRACT…",
     "phaseProving": "GENERATING ZK PROOF…",
-    "phaseSubmitting": "SUBMITTING…",
-    "phaseEscrowing": "SAVING…",
     "provingHint": "Your pick never leaves this browser — only a zero-knowledge proof is sent. This can take up to a minute.",
-    "phaseConfirming": "CONFIRMING…"
+    "phaseConfirming": "CONFIRMING…",
+    "pointsPending": "Updating your points…",
+    "pointsDelayed": "Your points may take a few minutes to appear."
   },
   "search": {
     "noResults": "No results found",

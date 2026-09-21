@@ -8,8 +8,9 @@ import Result from './Result';
 import { useGameLogic, useTournament as useTournamentData } from '~/hooks';
 import { useTournament } from '~/context/TournamentContext';
 import { Candidate } from '~/lib/api/types';
-import { useChainId } from '~/hooks/wallet';
+import { useChainId, useMidnight } from '~/hooks/wallet';
 import { Spinner } from '~/components/ui/Spinner';
+import { startGame } from '~/lib/midnight/finalizeTimeline';
 
 interface TournamentGameProps {
     gameId: string;
@@ -54,6 +55,19 @@ export default function TournamentGame({ gameId, isActive, totalRound }: Tournam
     });
 
     const { syncExternalGame } = useTournament();
+    const { wallet, address } = useMidnight();
+
+    // 게임이 시작되면 finalize 준비(WASM 로드 + providers/contract join + prover 키 prefetch)를 미리 돌린다.
+    // 15~63번의 선택이 이어지는 동안 끝나므로 Result 의 Submit 시점엔 증명만 남는다. 실패는 제출 시 재시도.
+    const bracketSize = totalRound || 16;
+    useEffect(() => {
+        if (!isActive || winner || candidates.length === 0 || !wallet || !address) return;
+        if (bracketSize !== 16 && bracketSize !== 32 && bracketSize !== 64) return;
+        startGame(`${numericGameId}:${bracketSize}`); // 계측 타임라인의 0초 지점
+        import('~/lib/midnight/session')
+            .then((m) => m.prewarmMidnight(wallet, address, bracketSize))
+            .catch((e) => console.warn('[tournament] midnight prewarm failed:', e));
+    }, [isActive, winner, candidates.length, wallet, address, bracketSize, numericGameId]);
 
     // Animation states — selectPhase: idle → center → up (선택 카드), 비선택은 페이드아웃
     const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -222,6 +236,7 @@ export default function TournamentGame({ gameId, isActive, totalRound }: Tournam
                             onRetry={handleRetry}
                             finalArray={finalArray}
                             finalHex={finalHex}
+                            isActive={isActive}
                         />
                     </div>
                 ) : (

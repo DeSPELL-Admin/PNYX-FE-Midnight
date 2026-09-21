@@ -249,10 +249,10 @@
     "phaseGranting": "資格確認中…",
     "phaseJoining": "コントラクト読込中…",
     "phaseProving": "ZK 証明を生成中…",
-    "phaseSubmitting": "送信中…",
-    "phaseEscrowing": "保存中…",
     "provingHint": "あなたの選択はブラウザから出ません — ゼロ知識証明だけが送信されます。最大1分ほどかかります。",
-    "phaseConfirming": "確認中…"
+    "phaseConfirming": "確認中…",
+    "pointsPending": "ポイントを反映中…",
+    "pointsDelayed": "ポイントの反映には数分かかることがあります。"
   },
   "search": {
     "noResults": "結果が見つかりません",

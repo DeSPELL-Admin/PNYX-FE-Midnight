@@ -267,6 +267,12 @@ async function parseResponse<T>(
     return response.text() as Promise<T>;
   }
 
+  // 204 No Content(예: POST /escrow) 또는 명시적 빈 본문은 성공이다 — 파싱할 것이 없다.
+  // 이걸 json() 에 태우면 SyntaxError → "Invalid JSON response" 로 성공 요청이 실패로 보고된다.
+  if (response.status === 204 || response.headers.get('content-length') === '0') {
+    return undefined as T;
+  }
+
   // 200 응답이라도 본문이 JSON 이 아닐 수 있다(게이트웨이 HTML, 빈 본문 등).
   // 보호 없이 파싱하면 uncaught SyntaxError 가 React Query 재시도 루프를 유발하므로
   // ApiError 로 변환해 기존 에러 처리 흐름에 태운다.

@@ -22,7 +22,7 @@ export function useAccount() {
     isConnecting,
     isReconnecting: false,
     chainId: isConnected ? chainId : undefined,
-    connector: wallet ? { id: 'midnight-lace', name: wallet.walletName } : undefined,
+    connector: wallet ? { id: wallet.walletRdns, name: wallet.walletName } : undefined,
   };
 }
 
@@ -42,5 +42,5 @@ export function useDisconnect() {
 
 export function useConnect() {
   const { connect, isConnecting, error } = useMidnight();
-  return { connect: () => { void connect().catch(() => {}); }, connectAsync: connect, isPending: isConnecting, error };
+  return { connect: (rdns?: string) => { void connect(rdns).catch(() => {}); }, connectAsync: connect, isPending: isConnecting, error };
 }

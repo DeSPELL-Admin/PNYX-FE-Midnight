@@ -38,7 +38,7 @@ export default function NetworkSwitcher() {
                     <Check size={18} />
                 </div>
                 <dl className="text-xs text-brand-primary-200 space-y-1 px-1 pt-2 break-all">
-                    <div className="flex justify-between gap-3"><dt>{t('wallet')}</dt><dd>{wallet?.walletName ?? 'Lace'}</dd></div>
+                    <div className="flex justify-between gap-3"><dt>{t('wallet')}</dt><dd>{wallet?.walletName ?? '—'}</dd></div>
                     <div className="flex justify-between gap-3"><dt>{t('address')}</dt><dd>{short(address, 14)}</dd></div>
                     <div className="flex justify-between gap-3"><dt>{t('contract')}</dt><dd>{short(TOURNAMENT_FINALIZER_ADDRESS)}</dd></div>
                 </dl>

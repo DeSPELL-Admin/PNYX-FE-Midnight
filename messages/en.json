@@ -67,10 +67,10 @@
     "signingIn": "SIGNING IN…",
     "signInFailed": "Sign-in failed. Please try again.",
     "signInRetry": "Retry sign-in",
-    "connectLace": "CONNECT LACE",
-    "connectLaceSub": "Midnight Lace wallet · {network}",
-    "installLace": "INSTALL LACE",
-    "installLaceSub": "Midnight Lace wallet extension is required"
+    "connectWallet": "CONNECT {wallet}",
+    "connectWalletSub": "Midnight wallet · {network}",
+    "installWallet": "INSTALL {wallet}",
+    "installWalletSub": "A Midnight wallet extension is required"
   },
   "mypage": {
     "walletUser": "Wallet User",

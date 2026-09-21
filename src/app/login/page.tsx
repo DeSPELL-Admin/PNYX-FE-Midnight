@@ -9,12 +9,16 @@ import { useMidnight } from '~/components/providers/MidnightProvider';
 import { useAuthSession } from '~/hooks/auth/useAuthSession';
 import { MIDNIGHT_NETWORK_ID } from '~/lib/midnight/config';
 
-const LACE_INSTALL_URL = 'https://www.lace.io/';
+/** 감지된 지갑이 없을 때 안내할 설치 링크 — DApp connector v4 를 구현한 Midnight 지갑들 */
+const INSTALL_LINKS = [
+  { name: 'Lace', url: 'https://www.lace.io/' },
+  { name: '1AM', url: 'https://1am.xyz/' },
+];
 
 export default function LoginPage() {
   const router = useRouter();
   const t = useTranslations('login');
-  const { isConnected, isConnecting, isWalletAvailable, connect, error: connectError } = useMidnight();
+  const { isConnected, isConnecting, wallets, connect, error: connectError } = useMidnight();
   const [isMounted, setIsMounted] = useState(false);
   const { status, signIn, isSigningIn, error: signError } = useAuthSession();
 
@@ -25,7 +29,7 @@ export default function LoginPage() {
     if (status === 'authenticated') router.replace('/');
   }, [status, router]);
 
-  const handleConnect = () => { void connect().catch(() => { /* connectError 로 표시 */ }); };
+  const handleConnect = (rdns: string) => { void connect(rdns).catch(() => { /* connectError 로 표시 */ }); };
   const handleSignIn = () => { void signIn().catch(() => { /* signError 로 표시 */ }); };
 
   if (!isMounted) return <Spinner />;
@@ -40,22 +44,31 @@ export default function LoginPage() {
 
       <div className="w-full max-w-xs space-y-3 z-10">
         {!isConnected && (
-          isWalletAvailable ? (
-            <Button fullWidth onClick={handleConnect} disabled={isConnecting} isLoading={isConnecting} variant="ctaYellow" size="lg">
-              <div className="flex flex-col items-center leading-tight">
-                <span>{t('connectLace')}</span>
-                <span className="text-[10px] opacity-70 font-normal">{t('connectLaceSub', { network: MIDNIGHT_NETWORK_ID })}</span>
-              </div>
-            </Button>
-          ) : (
-            <a href={LACE_INSTALL_URL} target="_blank" rel="noreferrer" className="block">
-              <Button fullWidth variant="ctaYellow" size="lg">
-                <div className="flex flex-col items-center leading-tight">
-                  <span>{t('installLace')}</span>
-                  <span className="text-[10px] opacity-70 font-normal">{t('installLaceSub')}</span>
+          wallets.length > 0 ? (
+            wallets.map((w) => (
+              <Button key={w.rdns} fullWidth onClick={() => handleConnect(w.rdns)} disabled={isConnecting} isLoading={isConnecting} variant="ctaYellow" size="lg">
+                <div className="flex items-center justify-center gap-2">
+                  {w.icon && <img src={w.icon} alt="" className="w-5 h-5 rounded" />}
+                  <div className="flex flex-col items-center leading-tight">
+                    <span>{t('connectWallet', { wallet: w.name })}</span>
+                    <span className="text-[10px] opacity-70 font-normal">{t('connectWalletSub', { network: MIDNIGHT_NETWORK_ID })}</span>
+                  </div>
                 </div>
               </Button>
-            </a>
+            ))
+          ) : (
+            <div className="space-y-2">
+              {INSTALL_LINKS.map((link) => (
+                <a key={link.name} href={link.url} target="_blank" rel="noreferrer" className="block">
+                  <Button fullWidth variant="ctaYellow" size="lg">
+                    <div className="flex flex-col items-center leading-tight">
+                      <span>{t('installWallet', { wallet: link.name })}</span>
+                      <span className="text-[10px] opacity-70 font-normal">{t('installWalletSub')}</span>
+                    </div>
+                  </Button>
+                </a>
+              ))}
+            </div>
           )
         )}
 

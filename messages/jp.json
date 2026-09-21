@@ -67,10 +67,10 @@
     "signingIn": "署名中…",
     "signInFailed": "サインインに失敗しました。もう一度お試しください。",
     "signInRetry": "サインインを再試行",
-    "connectLace": "LACE に接続",
-    "connectLaceSub": "Midnight Lace ウォレット · {network}",
-    "installLace": "LACE をインストール",
-    "installLaceSub": "Midnight Lace ウォレット拡張が必要です"
+    "connectWallet": "{wallet} に接続",
+    "connectWalletSub": "Midnight ウォレット · {network}",
+    "installWallet": "{wallet} をインストール",
+    "installWalletSub": "Midnight ウォレット拡張が必要です"
   },
   "mypage": {
     "walletUser": "ウォレットユーザー",

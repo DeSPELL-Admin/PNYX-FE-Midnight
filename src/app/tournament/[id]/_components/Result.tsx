@@ -190,16 +190,30 @@ export default function Result({ tournamentId, winner, onRetry, finalArray, fina
         }
     }, [winner, finalHex, finalArray, tournamentId, finalizeTournament, toast, tError, resolveErrorMessage]);
 
-    const phaseLabel = (p: FinalizePhase) => {
+    // 진행 스테퍼 — 사용자 관점의 4단계. granting/indexing 은 둘 다 "온체인 기록 대기"라 한 단계로 묶는다.
+    // 예상 시간은 실측 기준(온체인 기록 ≈ 포함 6s + 최종성 12s, 증명 ≈ 30s) — 없으면 멈춘 것처럼 보인다.
+    const STEPS = ['recording', 'loading', 'proving', 'confirming'] as const;
+    const stepOf = (p: FinalizePhase): number => {
         switch (p) {
-            case 'granting': return tTournament('phaseGranting');
-            case 'indexing': return tTournament('phaseIndexing');
-            case 'joining': return tTournament('phaseJoining');
-            case 'proving': return tTournament('phaseProving');
-            case 'confirming': return tTournament('phaseConfirming');
-            default: return tCommon('submit');
+            case 'granting': case 'indexing': return 0;
+            case 'joining': return 1;
+            case 'proving': return 2;
+            case 'confirming': case 'done': return 3;
+            default: return -1;
         }
     };
+    const stepLabel = (i: number) => {
+        switch (STEPS[i]) {
+            case 'recording': return { label: tTournament('stepRecording'), eta: 15 };
+            case 'loading': return { label: tTournament('stepLoading'), eta: undefined };
+            case 'proving': return { label: tTournament('stepProving'), eta: 30 };
+            default: return { label: tTournament('stepConfirming'), eta: undefined };
+        }
+    };
+    const currentStep = txStatus === 'pending' ? stepOf(phase) : -1;
+
+    // 프라이버시 고지(어느 서버가 내 선택을 받는가)는 배지 안에 접어 둔다 — 항상 펼쳐 두면 버튼 아래가 길어져 안 읽힌다.
+    const [proofOpen, setProofOpen] = useState(false);
 
     return (
         <div className="w-full h-full overflow-y-auto">
@@ -261,7 +275,26 @@ export default function Result({ tournamentId, winner, onRetry, finalArray, fina
                                 </Button>
                             </div>
                         ) : (
-                            <div className="flex flex-col items-center justify-center w-full gap-3">
+                            <div className="flex flex-col items-center justify-center w-full gap-2.5">
+                                {currentStep >= 0 && (
+                                    // 진행 스테퍼 — 어느 단계에서 기다리는지 + 예상 시간. 버튼 문구는 고정(SUBMITTING…).
+                                    <div className="flex items-center gap-2 text-[12px] text-brand-primary-300" aria-live="polite">
+                                        <div className="flex gap-[5px]" aria-hidden="true">
+                                            {STEPS.map((s, i) => (
+                                                <span
+                                                    key={s}
+                                                    className={`block w-[7px] h-[7px] rounded-full ${
+                                                        i < currentStep ? 'bg-white' : i === currentStep ? 'bg-white ring-[3px] ring-white/20' : 'bg-brand-primary-700'
+                                                    }`}
+                                                />
+                                            ))}
+                                        </div>
+                                        <span>{stepLabel(currentStep).label}</span>
+                                        {stepLabel(currentStep).eta !== undefined && (
+                                            <span className="text-brand-primary-600">{tTournament('stepEta', { s: stepLabel(currentStep).eta as number })}</span>
+                                        )}
+                                    </div>
+                                )}
                                 <Button
                                     variant="ctaBlack"
                                     className=""
@@ -269,32 +302,39 @@ export default function Result({ tournamentId, winner, onRetry, finalArray, fina
                                     isLoading={txStatus === 'pending'}
                                     disabled={!finalHex || feeBlocked}
                                 >
-                                    {txStatus === 'pending' ? phaseLabel(phase) : tCommon('submit')}
+                                    {txStatus === 'pending' ? tTournament('submitting') : tCommon('submit')}
                                 </Button>
                                 {feeBlocked && (
-                                    // 수수료 DUST 가 아직 없다 — NIGHT 미등록이면 등록 안내, 등록됐으면 생성 대기 안내
-                                    <div className="w-full space-y-1 rounded-[8px] border border-yellow-400/40 bg-yellow-500/10 px-3 py-2 text-center">
-                                        <p className="text-[11px] text-yellow-200">
-                                            {feeStatus === 'no_night' ? tTournament('dustNoNight') : tTournament('dustGenerating')}
-                                        </p>
-                                        <p className="text-[10px] text-white/70">{tTournament('dustHint')}</p>
-                                        <button type="button" onClick={handleRecheckFee} disabled={isCheckingFee} className="text-[11px] font-semibold text-white underline underline-offset-2 disabled:opacity-50">
-                                            {isCheckingFee ? tTournament('dustRechecking') : tTournament('dustRecheck')}
-                                        </button>
-                                    </div>
-                                )}
-                                {txStatus === 'pending' && phase === 'proving' && (
-                                    <p className="text-center text-[11px] text-brand-primary-300 px-2">{tTournament('provingHint')}</p>
+                                    // 수수료 DUST 가 아직 없다 — 원인 한 줄 + 재확인 액션을 같은 줄에, 설명은 한 문장.
+                                    <>
+                                        <div className="w-full flex items-center justify-between gap-2 rounded-[10px] border border-point-yellow/35 bg-point-yellow/[0.08] px-3 py-2 text-[12px] text-point-yellow">
+                                            <span className="font-semibold">⚠ {feeStatus === 'no_night' ? tTournament('dustNoNight') : tTournament('dustGenerating')}</span>
+                                            <button type="button" onClick={handleRecheckFee} disabled={isCheckingFee} className="shrink-0 font-semibold text-white underline underline-offset-2 disabled:opacity-50">
+                                                {isCheckingFee ? tTournament('dustRechecking') : tTournament('dustRecheck')}
+                                            </button>
+                                        </div>
+                                        <p className="text-center text-[12px] text-brand-primary-400 px-2">{tTournament('dustHint')}</p>
+                                    </>
                                 )}
                                 {proofServer && (
-                                    // 비공개 입력(선택·비밀값)이 어디로 가는지 — 모바일에선 title 이 안 보이므로 본문으로 쓴다.
-                                    <div className="text-center text-[10px] text-brand-primary-400 px-2 space-y-0.5">
-                                        <p>
-                                            {tTournament('proofServerLabel')} · {tTournament(`proofServer_${proofServer.source}`)}
-                                            <span className="font-mono opacity-70"> ({safeHost(proofServer.url)})</span>
-                                        </p>
-                                        <p className="opacity-80">{tTournament('proofServerHint')}</p>
-                                    </div>
+                                    // 어느 proof server 가 내 선택을 받는지 — 배지 한 줄, 탭하면 호스트와 설명이 펼쳐진다.
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={() => setProofOpen((v) => !v)}
+                                            aria-expanded={proofOpen}
+                                            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.08] px-2.5 py-1 text-[12px] text-brand-primary-300"
+                                        >
+                                            <span aria-hidden="true">🔒</span>
+                                            {tTournament(`proofBadge_${proofServer.source}`)}
+                                            <span aria-hidden="true" className={`text-[10px] opacity-70 transition-transform ${proofOpen ? 'rotate-180' : ''}`}>▼</span>
+                                        </button>
+                                        {proofOpen && (
+                                            <p className="text-center text-[12px] text-brand-primary-400 px-2">
+                                                {tTournament(`proofDisclosure_${proofServer.source}`, { host: safeHost(proofServer.url) })}
+                                            </p>
+                                        )}
+                                    </>
                                 )}
                             </div>
                         )

@@ -29,6 +29,7 @@ import type { ConnectedWallet } from '~/lib/midnight/connector';
 import { getOrCreateUserSecret, newVoteSalt, pad32, toHex } from '~/lib/midnight/userKeys';
 import type { FinalizeBracketSize } from '~/lib/midnight/providers';
 import { mark, markError } from '~/lib/midnight/finalizeTimeline';
+import { readDustStatus, type DustState } from '~/lib/midnight/dust';
 
 // midnight-js + compact-runtime(WASM) 은 무겁고 브라우저 전용 → 실제 필요 시점에만 동적 로드한다.
 const loadMidnight = () => import('~/lib/midnight/session');
@@ -93,7 +94,27 @@ async function ensureWalletLive(
   return fresh;
 }
 
-export type FinalizePhase = 'idle' | 'granting' | 'joining' | 'proving' | 'confirming' | 'done' | 'error';
+/**
+ * 'granting' = BE 가 grant tx 를 만들어 블록 포함까지(≈10s), 'indexing' = 그 leaf 가 인덱서에 보일 때까지(수 초).
+ * 둘 다 체인 대기라 길지만 원인이 달라서 화면에 따로 보여준다 — 하나로 묶으면 "멈춘 것"처럼 보인다.
+ */
+export type FinalizePhase = 'idle' | 'granting' | 'indexing' | 'joining' | 'proving' | 'confirming' | 'done' | 'error';
+
+/**
+ * 수수료(DUST) 준비 상태 = 마지막으로 읽은 `DustState`. 조회 중에도 값을 유지한다 — 조회 중이라고
+ * 게이트를 풀면 30s 폴링마다 Submit 이 잠깐 열리고 "다시 확인" 버튼이 자기 카드를 지운다.
+ */
+export type FeeStatus = DustState;
+
+/** 증명 전 DUST 재확인에서 걸린 경우 — Result 는 `classifyWalletError` 로 같은 안내를 띄운다. */
+export class DustNotReadyError extends Error {
+  readonly state: DustState;
+  constructor(state: DustState) {
+    super(`Insufficient funds: could not balance dust (${state})`);
+    this.name = 'DustNotReadyError';
+    this.state = state;
+  }
+}
 
 export interface FinalizeParams {
   tournamentId: number;
@@ -122,7 +143,34 @@ export const useFinalizeTournament = (
   const { wallet, address, reconnect } = useMidnight();
   const [phase, setPhase] = useState<FinalizePhase>('idle');
   const [txId, setTxId] = useState<string | undefined>(undefined);
+  const [feeStatus, setFeeStatus] = useState<FeeStatus>('unknown');
+  const [isCheckingFee, setIsCheckingFee] = useState(false);
   const inFlight = useRef(false);
+  // 겹친 조회(30s 폴링 + "다시 확인")는 마지막 것만 반영한다 — 느린 옛 응답이 새 'ready' 를 덮지 않도록.
+  const feeCheckSeq = useRef(0);
+
+  /**
+   * DUST 사전 확인. 증명(~30s)을 만들기 전에 수수료를 낼 수 있는지 본다 — 새 지갑은 NIGHT 등록 후
+   * DUST 가 차기까지 기다려야 해서, 그 사이엔 Submit 을 막고 안내한다. 조회 불가 지갑은 'unknown'.
+   */
+  const checkFee = useCallback(async (): Promise<DustState> => {
+    if (!wallet) {
+      // 지갑이 빠졌으면 이전 지갑의 DUST 상태로 Submit 을 계속 막지 않는다.
+      setFeeStatus('unknown');
+      return 'unknown';
+    }
+    const seq = ++feeCheckSeq.current;
+    setIsCheckingFee(true);
+    try {
+      const status = await readDustStatus(wallet.api);
+      if (seq !== feeCheckSeq.current) return status.state;
+      mark('fee:check', { state: status.state, balance: status.balance.toString(), cap: status.cap.toString(), reason: status.reason });
+      setFeeStatus(status.state);
+      return status.state;
+    } finally {
+      if (seq === feeCheckSeq.current) setIsCheckingFee(false);
+    }
+  }, [wallet]);
   // 미리 보낸 grant 요청. key = (chain, tournament, bracket, address) — 브라켓이 바뀌면(다시하기) 새로 보낸다.
   // BE 도 (wallet, tournament) 레코드의 entryItemHexes 가 같을 때만 재사용하므로 브라켓별로 leaf 가 발급된다.
   const prepared = useRef<PreparedGrant | null>(null);
@@ -165,12 +213,14 @@ export const useFinalizeTournament = (
     if (prepared.current?.key !== key) {
       mark('result:prepare', { size: p.bracketSize });
       requestGrant(p, key);
+      // 세션 준비와 독립 — 사용자가 우승자를 보는 동안 DUST 상태를 미리 읽어 둔다(브라켓당 한 번).
+      void checkFee().catch((e) => console.warn('[finalize] fee check failed:', e));
     }
     const size = p.bracketSize;
     loadMidnight()
       .then((m) => m.prewarmMidnight(wallet, address, size))
       .catch((e) => console.warn('[finalize] prewarm failed:', e));
-  }, [chainId, wallet, address, grantKey, requestGrant]);
+  }, [chainId, wallet, address, grantKey, requestGrant, checkFee]);
 
   const finalizeTournament = useCallback(async (p: FinalizeParams) => {
     if (!chainId) { onError({ error: new Error('Chain not connected') }); return; }
@@ -194,6 +244,12 @@ export const useFinalizeTournament = (
       // 재연결되면 wallet 객체가 바뀌므로 세션(providers/join)도 새 지갑으로 다시 만든다.
       const liveWallet = await ensureWalletLive(wallet, reconnect);
 
+      // DUST 재확인 — 사전 확인 이후 시간이 흘렀을 수 있다. grant 를 기다리기 전에 끊어야 grant deadline 을
+      // 낭비하지 않고, 30s 증명도 만들지 않는다. (재연결로 wallet 객체가 바뀌었을 수 있어 liveWallet 로 읽는다.)
+      const dust = await readDustStatus(liveWallet.api);
+      setFeeStatus(dust.state);
+      if (dust.state === 'no_night' || dust.state === 'generating') throw new DustNotReadyError(dust.state);
+
       // grant 와 세션 준비는 서로 독립 — 동시에 진행하고 순서대로 기다린다.
       const grantPromise = reusedGrant
         ? prepared.current!.grant
@@ -214,7 +270,7 @@ export const useFinalizeTournament = (
 
       // grant leaf 가 인덱서에 보일 때까지 대기 (미리 보낸 grant 라면 보통 즉시 통과).
       // 끝내 안 보이면 증명은 InvalidSigner 로 확정 실패하므로 30s 증명을 낭비하지 않고 여기서 끊는다.
-      setPhase('granting');
+      setPhase('indexing');
       const visible = await mod.waitForEligibilityLeaf(providers, {
         userPk: mod.pureCircuits.userPublicKey(userSecret),
         tournamentId: p.tournamentId,
@@ -288,5 +344,5 @@ export const useFinalizeTournament = (
     }
   }, [chainId, wallet, address, reconnect, onSuccess, onError, onSettled, grantKey, requestGrant]);
 
-  return { finalizeTournament, prepareFinalize, phase, txId };
+  return { finalizeTournament, prepareFinalize, phase, txId, feeStatus, isCheckingFee, checkFee };
 };

@@ -2,10 +2,10 @@
  * midnight-js providers 조립 (브라우저).
  *
  *   walletProvider / midnightProvider : Lace ConnectedAPI 위임 (balance → 지갑이 DUST 로 수수료 충당, submit)
- *   proofProvider                     : env(NEXT_PUBLIC_MIDNIGHT_PROOF_SERVER_URL) > 지갑 proverServerUri > 로컬 6300
+ *   proofProvider                     : 지갑 proverServerUri(공용 서버 제외) > env(NEXT_PUBLIC_MIDNIGHT_PROOF_SERVER_URL) > 로컬 6300
  *   zkConfigProvider                  : /zk/<Name>/{keys,zkir} 를 fetch
  *   publicDataProvider                : 지갑 설정의 indexer
- *   privateStateProvider              : localStorage (userSecret 등이 브라우저를 떠나지 않는다)
+ *   privateStateProvider              : localStorage (userSecret 등은 브라우저와 선택된 proof server 만 본다)
  *
  * example-bboard/bboard-ui 의 BrowserDeployedBoardManager 패턴(Apache-2.0)을 따른다.
  */
@@ -25,7 +25,9 @@ import { FetchZkConfigProvider } from '@midnight-ntwrk/midnight-js-fetch-zk-conf
 import { httpClientProofProvider } from '@midnight-ntwrk/midnight-js-http-client-proof-provider';
 import { indexerPublicDataProvider } from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';
 import { setNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
-import { FALLBACK_PROOF_SERVER_URL, MIDNIGHT_NETWORK_ID, ZK_CONFIG_BASE_URL } from './config';
+import { MIDNIGHT_INDEXER_URL, MIDNIGHT_INDEXER_WS_URL, MIDNIGHT_NETWORK_ID, ZK_CONFIG_BASE_URL } from './config';
+import { resolveProofServer, setProofServerInfo } from './proofServer';
+import { classifyWalletError } from './dust';
 
 // midnight-js 전역 네트워크 설정 — 주소 인코딩·tx 조립이 이걸 요구한다.
 // BE(lib/sdk.ts)·CLI(scripts/lib/session.ts)는 각자 호출하지만 브라우저 번들은 여기가 유일한 진입점.
@@ -92,10 +94,7 @@ export async function prefetchFinalizeCircuit(size: FinalizeBracketSize): Promis
  * "[1AM Content] Error forwarding message" 를 내고 dApp 에는 `{ code: 'InternalError', message: 'Request failed' }`
  * 를 돌려준다 — 같은 요청을 잠시 뒤 다시 보내면 통한다. 사용자 거절/잔액 부족 같은 확정 실패는 여기 걸리지 않는다.
  */
-function isTransientWalletError(e: unknown): boolean {
-  const err = e as { code?: unknown; message?: unknown } | null;
-  return err?.code === 'InternalError' || (typeof err?.message === 'string' && /request failed/i.test(err.message));
-}
+const isTransientWalletError = (e: unknown): boolean => classifyWalletError(e) === 'transient';
 
 // 마지막으로 확장과 통신한 시각 — 재시도 로그에 유휴 시간을 남겨 "유휴 후 첫 호출" 가설을 검증한다.
 let lastWalletCallAt = 0;
@@ -138,13 +137,15 @@ export async function buildTournamentFinalizerProviders(wallet: ConnectedWallet)
   const config = await wallet.api.getConfiguration();
   lastWalletCallAt = Date.now();
   const zkConfigProvider = getTournamentFinalizerZkConfig();
-  // env 로 지정된 proof server 가 있으면 지갑 설정보다 우선한다 — Lace 기본값(공용
-  // proof-server.preprod.midnight.network)은 프루빙 요청을 403 으로 거부하므로 로컬 서버가 필요.
-  const proverUri = process.env.NEXT_PUBLIC_MIDNIGHT_PROOF_SERVER_URL
-    ? FALLBACK_PROOF_SERVER_URL
-    : (config.proverServerUri || FALLBACK_PROOF_SERVER_URL);
+  const proofServer = resolveProofServer(config.proverServerUri);
+  setProofServerInfo(proofServer);
+  mark('session:proof-server', { source: proofServer.source, url: proofServer.url });
+  // 지갑 인덱서와 우리가 쓰는 인덱서가 다르면 남겨 둔다 — leaf 타임아웃 진단용.
+  if (config.indexerUri !== MIDNIGHT_INDEXER_URL) {
+    mark('session:indexer', { used: MIDNIGHT_INDEXER_URL, wallet: config.indexerUri });
+  }
   const wp = walletAndMidnightProvider(wallet);
-  const baseProofProvider = httpClientProofProvider(proverUri, zkConfigProvider);
+  const baseProofProvider = httpClientProofProvider(proofServer.url, zkConfigProvider);
   // proof server 왕복(키 업로드 + 서버 증명)만 따로 잰다 — 지갑 승인 시간과 분리하기 위해.
   const proofProvider: typeof baseProofProvider = {
     async proveTx(tx, config) {
@@ -158,7 +159,11 @@ export async function buildTournamentFinalizerProviders(wallet: ConnectedWallet)
     privateStateProvider: localStoragePrivateStateProvider<typeof TF_PRIVATE_STATE_ID, TournamentFinalizerPrivateState>(),
     zkConfigProvider,
     proofProvider,
-    publicDataProvider: indexerPublicDataProvider(config.indexerUri, config.indexerWsUri),
+    // 컨트랙트 상태(grant leaf, 라이선스)는 네트워크 기본 인덱서(env 우선)로 읽는다 — 지갑이 알려주는
+    // indexerUri 는 지갑마다/프로필마다 달라서(다른 인스턴스·버전·지연) 같은 체인인데도 우리 컨트랙트
+    // 상태가 안 보이는 일이 있었다(leaf 는 온체인에 있는데 FE 만 30회 타임아웃). 공개 데이터라 프라이버시
+    // 문제는 없고, 지갑 인덱서는 지갑 자신의 동기화에만 쓰이면 된다.
+    publicDataProvider: indexerPublicDataProvider(MIDNIGHT_INDEXER_URL, MIDNIGHT_INDEXER_WS_URL),
     walletProvider: wp,
     midnightProvider: wp,
   };

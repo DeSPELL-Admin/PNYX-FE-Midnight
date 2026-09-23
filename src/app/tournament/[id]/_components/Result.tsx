@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useSyncExternalStore } from 'react';
 import { useTranslations } from 'next-intl';
 import { useQueryClient } from '@tanstack/react-query';
 import Button from '~/components/ui/Button';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { useFinalizeTournament, type FinalizePhase } from '~/hooks/contract/useFinalizeTournament';
+import { DustNotReadyError, useFinalizeTournament, type FinalizePhase } from '~/hooks/contract/useFinalizeTournament';
+import { getProofServerInfo, getProofServerInfoServerSnapshot, safeHost, subscribeProofServerInfo } from '~/lib/midnight/proofServer';
+import { classifyWalletError } from '~/lib/midnight/dust';
 import { useAccount, useChainId } from '~/hooks/wallet';
 import { useTournament } from '~/hooks';
 import { tournamentKeys } from '~/hooks/tournaments';
@@ -65,15 +67,30 @@ export default function Result({ tournamentId, winner, onRetry, finalArray, fina
     // viem 에러는 shortMessage 우선 → message → 마지막 String(err) 순.
     // description 이 절대 비거나 undefined 가 되지 않도록 보장한다.
     const resolveErrorMessage = useCallback((err: unknown): string => {
+        // 사전 DUST 게이트에서 끊긴 경우 — 원인별로(NIGHT 미등록 / 생성 대기) 카드와 같은 문구를 쓴다.
+        if (err instanceof DustNotReadyError) {
+            return err.state === 'no_night' ? tTournament('dustNoNight') : tTournament('dustGenerating');
+        }
+        // 지갑 에러는 원문이 기술적이라("could not balance dust") 분류별로 사용자 문구로 바꾼다.
+        // session_expired 는 *지갑 확장* 연결이 끊긴 것 — 앱 로그인 세션(sessionExpired)과 다르다.
+        switch (classifyWalletError(err)) {
+            case 'dust_insufficient': return tError('dustInsufficient');
+            case 'session_expired': return tError('walletReconnect');
+            case 'rejected': return tError('userRejection');
+            default: break;
+        }
         if (err && typeof err === 'object') {
             const e = err as { shortMessage?: unknown; message?: unknown };
             if (typeof e.shortMessage === 'string' && e.shortMessage) return e.shortMessage;
             if (typeof e.message === 'string' && e.message) return e.message;
         }
         return String(err) || tError('unknownError');
-    }, [tError]);
+    }, [tError, tTournament]);
 
-    const { finalizeTournament, prepareFinalize, phase } = useFinalizeTournament(chainId, () => {
+    // 어느 proof server 가 이 투표의 witness 를 받는지 — prewarm 이 providers 를 조립하면 채워진다.
+    const proofServer = useSyncExternalStore(subscribeProofServerInfo, getProofServerInfo, getProofServerInfoServerSnapshot);
+
+    const { finalizeTournament, prepareFinalize, phase, feeStatus, isCheckingFee, checkFee } = useFinalizeTournament(chainId, () => {
         // 트랜잭션 제출 직후 — 투표는 이미 온체인이므로 여기서 성공 화면으로 전환한다.
         // 포인트 반영(BE confirm)과 escrow 는 백그라운드로 이어지고 `phase` 가 'done' 이 되면 끝난다.
         setTxStatus('success');
@@ -108,6 +125,15 @@ export default function Result({ tournamentId, winner, onRetry, finalArray, fina
             bracketSize,
         });
     }, [isActive, txStatus, isStale, finalHex, bracketSize, tournamentId, prepareFinalize]);
+
+    // DUST 가 아직 없으면(NIGHT 미등록 / 생성 대기) Submit 을 막고 30s 마다 다시 읽는다 — 생성되는 즉시 풀린다.
+    const feeBlocked = feeStatus === 'no_night' || feeStatus === 'generating';
+    useEffect(() => {
+        if (!feeBlocked || txStatus === 'pending') return;
+        const id = setInterval(() => { void checkFee().catch(() => { /* 다음 주기에 재시도 */ }); }, 30_000);
+        return () => clearInterval(id);
+    }, [feeBlocked, txStatus, checkFee]);
+    const handleRecheckFee = useCallback(() => { void checkFee().catch(() => { /* 카드가 그대로 남는다 */ }); }, [checkFee]);
 
     // 성공 화면에서 confirm/escrow 가 아직 진행 중인지 — 포인트 "반영 중" 표시용
     const isSettling = txStatus === 'success' && phase !== 'done';
@@ -167,6 +193,7 @@ export default function Result({ tournamentId, winner, onRetry, finalArray, fina
     const phaseLabel = (p: FinalizePhase) => {
         switch (p) {
             case 'granting': return tTournament('phaseGranting');
+            case 'indexing': return tTournament('phaseIndexing');
             case 'joining': return tTournament('phaseJoining');
             case 'proving': return tTournament('phaseProving');
             case 'confirming': return tTournament('phaseConfirming');
@@ -240,12 +267,34 @@ export default function Result({ tournamentId, winner, onRetry, finalArray, fina
                                     className=""
                                     onClick={handleSendTransaction}
                                     isLoading={txStatus === 'pending'}
-                                    disabled={!finalHex}
+                                    disabled={!finalHex || feeBlocked}
                                 >
                                     {txStatus === 'pending' ? phaseLabel(phase) : tCommon('submit')}
                                 </Button>
+                                {feeBlocked && (
+                                    // 수수료 DUST 가 아직 없다 — NIGHT 미등록이면 등록 안내, 등록됐으면 생성 대기 안내
+                                    <div className="w-full space-y-1 rounded-[8px] border border-yellow-400/40 bg-yellow-500/10 px-3 py-2 text-center">
+                                        <p className="text-[11px] text-yellow-200">
+                                            {feeStatus === 'no_night' ? tTournament('dustNoNight') : tTournament('dustGenerating')}
+                                        </p>
+                                        <p className="text-[10px] text-white/70">{tTournament('dustHint')}</p>
+                                        <button type="button" onClick={handleRecheckFee} disabled={isCheckingFee} className="text-[11px] font-semibold text-white underline underline-offset-2 disabled:opacity-50">
+                                            {isCheckingFee ? tTournament('dustRechecking') : tTournament('dustRecheck')}
+                                        </button>
+                                    </div>
+                                )}
                                 {txStatus === 'pending' && phase === 'proving' && (
                                     <p className="text-center text-[11px] text-brand-primary-300 px-2">{tTournament('provingHint')}</p>
+                                )}
+                                {proofServer && (
+                                    // 비공개 입력(선택·비밀값)이 어디로 가는지 — 모바일에선 title 이 안 보이므로 본문으로 쓴다.
+                                    <div className="text-center text-[10px] text-brand-primary-400 px-2 space-y-0.5">
+                                        <p>
+                                            {tTournament('proofServerLabel')} · {tTournament(`proofServer_${proofServer.source}`)}
+                                            <span className="font-mono opacity-70"> ({safeHost(proofServer.url)})</span>
+                                        </p>
+                                        <p className="opacity-80">{tTournament('proofServerHint')}</p>
+                                    </div>
                                 )}
                             </div>
                         )

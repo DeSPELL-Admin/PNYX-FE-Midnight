@@ -75,6 +75,7 @@ export default function Result({ tournamentId, winner, onRetry, finalArray, fina
         // session_expired 는 *지갑 확장* 연결이 끊긴 것 — 앱 로그인 세션(sessionExpired)과 다르다.
         switch (classifyWalletError(err)) {
             case 'dust_insufficient': return tError('dustInsufficient');
+            case 'dust_rejected': return tError('dustRejected');
             case 'session_expired': return tError('walletReconnect');
             case 'rejected': return tError('userRejection');
             default: break;

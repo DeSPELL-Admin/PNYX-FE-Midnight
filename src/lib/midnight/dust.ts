@@ -71,6 +71,12 @@ function safeStringify(v: unknown): string {
 export type WalletErrorKind =
   /** 수수료 DUST 부족 — 지갑 balance 단계 "Insufficient Funds: could not balance dust" */
   | 'dust_insufficient'
+  /**
+   * 노드가 지갑이 붙인 DUST 지출 증명을 거부 — "Invalid Transaction: Custom error: 170"(InvalidDustSpendProof)
+   * 등 MalformedError 계열. 지갑의 DUST 상태가 체인과 어긋났거나(오래된 머클 루트), 스폰서(1AM)가 낸 DUST 가
+   * 유효하지 않을 때. 사전 체크로는 못 잡는다 — 1AM 은 스폰서 가상 잔액(balance === cap)을 돌려준다.
+   */
+  | 'dust_rejected'
   /** 확장 세션 만료/끊김 — 재연결 후 재시도 */
   | 'session_expired'
   /** 사용자가 승인 팝업에서 거절 */
@@ -88,6 +94,8 @@ export function classifyWalletError(e: unknown): WalletErrorKind {
   const err = (e && typeof e === 'object' ? e : {}) as ErrorLike;
   const text = [err.message, err.reason].filter((s): s is string => typeof s === 'string').join(' ');
   if (/could not balance dust|insufficient (funds|dust)/i.test(text)) return 'dust_insufficient';
+  // 노드 거부 코드: 168 FeeCalculation · 170 InvalidDustSpendProof · 182(문서화 안 됨, 같은 구간) · 186 EffectsCheckFailure
+  if (/invalid transaction.*custom error:\s*(168|170|182|186)\b/i.test(text)) return 'dust_rejected';
   if (err.code === 'Rejected' || err.code === 'PermissionRejected') return 'rejected';
   if (err.code === 'Disconnected' || /connection expired|not connected/i.test(text)) return 'session_expired';
   if (err.code === 'InternalError' || /request failed/i.test(text)) return 'transient';

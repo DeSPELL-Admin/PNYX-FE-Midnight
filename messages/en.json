@@ -310,7 +310,8 @@
     "staleGameDesc": "This continued game is no longer valid on the server. Please start a new game.",
     "startNewGame": "Start a new game",
     "dustInsufficient": "Not enough DUST to pay the fee. DUST accrues from the NIGHT in your wallet — wait a few minutes and try again.",
-    "walletReconnect": "Wallet connection expired — reconnect your wallet and submit again."
+    "walletReconnect": "Wallet connection expired — reconnect your wallet and submit again.",
+    "dustRejected": "The network rejected your wallet's DUST fee proof (Custom error 170/182). Re-sync the wallet or wait for DUST to accrue, then try again — or submit with a wallet that holds DUST."
   },
   "errorBoundary": {
     "heading": "Something went wrong",

@@ -70,7 +70,9 @@
     "connectWallet": "{wallet} に接続",
     "connectWalletSub": "Midnight ウォレット · {network}",
     "installWallet": "{wallet} をインストール",
-    "installWalletSub": "Midnight ウォレット拡張が必要です"
+    "installWalletSub": "Midnight ウォレット拡張が必要です",
+    "walletUnsupported": "{wallet} は PNYX に必要なウォレット機能が不足しているため使用できません",
+    "walletUnsupportedSub": "Lace など別の Midnight ウォレットをインストールしてください"
   },
   "mypage": {
     "walletUser": "ウォレットユーザー",
@@ -246,13 +248,24 @@
     "consent2Sub": "匿名統計",
     "consent3": "ロウ",
     "consent3Sub": "選択を販売",
-    "phaseGranting": "資格確認中…",
+    "phaseGranting": "資格をオンチェーンに記録中…",
+    "phaseIndexing": "インデクサー反映を待機中…",
     "phaseJoining": "コントラクト読込中…",
     "phaseProving": "ZK 証明を生成中…",
-    "provingHint": "あなたの選択はブラウザから出ません — ゼロ知識証明だけが送信されます。最大1分ほどかかります。",
+    "provingHint": "あなたの選択と秘密値は下記の証明サーバーにのみ送られ、チェーンにはゼロ知識証明だけが載ります。最大1分ほどかかります。",
     "phaseConfirming": "確認中…",
     "pointsPending": "ポイントを反映中…",
-    "pointsDelayed": "ポイントの反映には数分かかることがあります。"
+    "pointsDelayed": "ポイントの反映には数分かかることがあります。",
+    "proofServerLabel": "証明サーバー",
+    "proofServer_wallet": "ウォレットの設定",
+    "proofServer_env": "PNYX 運営",
+    "proofServer_local": "ローカル (127.0.0.1)",
+    "proofServerHint": "このサーバーがあなたの選択と秘密値を受け取り、ゼロ知識証明を生成します。ウォレットに自分の証明サーバーを設定すると PNYX のサーバーには送られません。",
+    "dustNoNight": "ウォレットに DUST 生成用の NIGHT が登録されていないため、まだ手数料を支払えません。",
+    "dustGenerating": "NIGHT から DUST が生成中です — まだ手数料を支払えません。",
+    "dustHint": "DUST は手数料トークンです。購入するものではなく、ウォレット内の NIGHT から時間とともに生成されます。NIGHT 登録後、通常は数分かかります。",
+    "dustRecheck": "再確認",
+    "dustRechecking": "確認中…"
   },
   "search": {
     "noResults": "結果が見つかりません",
@@ -294,7 +307,9 @@
     "authError": "認証エラーが発生しました。もう一度お試しください。",
     "staleGameTitle": "保存したゲームを送信できません",
     "staleGameDesc": "この続きのゲームはサーバー上で無効になりました。新しいゲームを開始してください。",
-    "startNewGame": "新しいゲームを開始"
+    "startNewGame": "新しいゲームを開始",
+    "dustInsufficient": "手数料を支払う DUST が不足しています。DUST はウォレット内の NIGHT から生成されます — 数分待ってから再試行してください。",
+    "walletReconnect": "ウォレット接続が切れました — ウォレットを再接続してからもう一度送信してください。"
   },
   "errorBoundary": {
     "heading": "問題が発生しました",

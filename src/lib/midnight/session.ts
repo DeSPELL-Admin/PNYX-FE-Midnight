@@ -134,6 +134,11 @@ export async function waitForEligibilityLeaf(
   if (!hasher) return false;
   const bHash = hasher(input.bracket.map((x) => BigInt(x)));
   mark('leaf:wait');
+  // 타임아웃 진단용 — "인덱서가 상태 자체를 안 줌"(잘못된 인덱서/네트워크)과 "상태는 오는데 leaf 가 없음"
+  // (BE 미포함/입력 불일치)은 원인이 전혀 다른데 겉으론 같은 타임아웃이다.
+  let stateMissing = 0;
+  let grantedCount: bigint | undefined;
+  let leafHex: string | undefined;
   for (let i = 0; i < attempts; i++) {
     const st = await providers.publicDataProvider.queryContractState(address);
     if (st) {
@@ -143,9 +148,13 @@ export async function waitForEligibilityLeaf(
         mark('leaf:visible', { attempt: i + 1 });
         return true;
       }
+      grantedCount = ledger.grantedCount;
+      leafHex ??= Array.from(leaf, (b) => b.toString(16).padStart(2, '0')).join('');
+    } else {
+      stateMissing++;
     }
     if (i < attempts - 1) await sleep(intervalMs);
   }
-  mark('leaf:timeout', { attempts });
+  mark('leaf:timeout', { attempts, stateMissing, grantedCount: grantedCount?.toString(), leaf: leafHex });
   return false;
 }

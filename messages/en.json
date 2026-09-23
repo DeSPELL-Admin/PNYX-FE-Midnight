@@ -70,7 +70,9 @@
     "connectWallet": "CONNECT {wallet}",
     "connectWalletSub": "Midnight wallet · {network}",
     "installWallet": "INSTALL {wallet}",
-    "installWalletSub": "A Midnight wallet extension is required"
+    "installWalletSub": "A Midnight wallet extension is required",
+    "walletUnsupported": "{wallet} can't be used with PNYX — it lacks required wallet features",
+    "walletUnsupportedSub": "Please install another Midnight wallet such as Lace"
   },
   "mypage": {
     "walletUser": "Wallet User",
@@ -246,13 +248,24 @@
     "consent2Sub": "anonymous stats",
     "consent3": "Row",
     "consent3Sub": "sell my pick",
-    "phaseGranting": "CHECKING ELIGIBILITY…",
+    "phaseGranting": "RECORDING ELIGIBILITY ON-CHAIN…",
+    "phaseIndexing": "WAITING FOR INDEXER…",
     "phaseJoining": "LOADING CONTRACT…",
     "phaseProving": "GENERATING ZK PROOF…",
-    "provingHint": "Your pick never leaves this browser — only a zero-knowledge proof is sent. This can take up to a minute.",
+    "provingHint": "Your pick and secret go only to the proof server shown below — the chain sees just a zero-knowledge proof. This can take up to a minute.",
     "phaseConfirming": "CONFIRMING…",
     "pointsPending": "Updating your points…",
-    "pointsDelayed": "Your points may take a few minutes to appear."
+    "pointsDelayed": "Your points may take a few minutes to appear.",
+    "proofServerLabel": "Proof server",
+    "proofServer_wallet": "your wallet's setting",
+    "proofServer_env": "hosted by PNYX",
+    "proofServer_local": "local (127.0.0.1)",
+    "proofServerHint": "This server receives your pick and secret to build the zero-knowledge proof. Set your own proof server in your wallet to keep them off PNYX servers.",
+    "dustNoNight": "Your wallet has no NIGHT registered for DUST, so it can't pay the fee yet.",
+    "dustGenerating": "DUST is still generating from your NIGHT — the fee can't be paid yet.",
+    "dustHint": "DUST is the fee token. It isn't bought: it accrues over time from the NIGHT in your wallet. This usually takes a few minutes after registering NIGHT.",
+    "dustRecheck": "Check again",
+    "dustRechecking": "Checking…"
   },
   "search": {
     "noResults": "No results found",
@@ -294,7 +307,9 @@
     "authError": "Authentication error. Please try again.",
     "staleGameTitle": "Saved game can't be submitted",
     "staleGameDesc": "This continued game is no longer valid on the server. Please start a new game.",
-    "startNewGame": "Start a new game"
+    "startNewGame": "Start a new game",
+    "dustInsufficient": "Not enough DUST to pay the fee. DUST accrues from the NIGHT in your wallet — wait a few minutes and try again.",
+    "walletReconnect": "Wallet connection expired — reconnect your wallet and submit again."
   },
   "errorBoundary": {
     "heading": "Something went wrong",

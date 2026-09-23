@@ -21,8 +21,17 @@ function apiRemotePattern(): { protocol: 'http' | 'https'; hostname: string; por
   }
 }
 
+/**
+ * Midnight 인덱서 업스트림. 브라우저가 공식 인덱서를 직접 부르면 CORS 에 막히므로(에러 페이지엔 ACAO 가 없다)
+ * 같은 오리진의 `/midnight-indexer/graphql` 로 받아 서버에서 프록시한다 — config.ts#MIDNIGHT_INDEXER_URL 참고.
+ */
+const MIDNIGHT_INDEXER_UPSTREAM =
+  process.env.MIDNIGHT_INDEXER_UPSTREAM ?? 'https://indexer.preprod.midnight.network/api/v4/graphql';
+
 const nextConfig: NextConfig = {
-  /* config options here */
+  async rewrites() {
+    return [{ source: '/midnight-indexer/graphql', destination: MIDNIGHT_INDEXER_UPSTREAM }];
+  },
   // Docker 런타임 스테이지가 .next/standalone + `node server.js` 로 구동하므로
   // standalone 산출물을 생성한다. (없으면 Dockerfile 의 COPY .next/standalone 실패)
   output: 'standalone',

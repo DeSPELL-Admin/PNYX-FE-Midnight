@@ -8,6 +8,7 @@ import { Spinner } from '~/components/ui/Spinner';
 import { useMidnight } from '~/components/providers/MidnightProvider';
 import { useAuthSession } from '~/hooks/auth/useAuthSession';
 import { MIDNIGHT_NETWORK_ID } from '~/lib/midnight/config';
+import { WalletUnsupportedError } from '~/lib/midnight/connector';
 
 /** 감지된 지갑이 없을 때 안내할 설치 링크 — DApp connector v4 를 구현한 Midnight 지갑들 */
 const INSTALL_LINKS = [
@@ -92,7 +93,16 @@ export default function LoginPage() {
         )}
 
         {connectError && (
-          <p className="text-[11px] text-red-400 text-center break-words">{connectError.message}</p>
+          connectError instanceof WalletUnsupportedError ? (
+            // 기능이 부족한 지갑 — 어떤 기능이 없는지 보여주고 다른 지갑 설치를 안내한다.
+            <div className="space-y-1 rounded-[8px] border border-red-400/40 bg-red-500/10 px-3 py-2 text-center">
+              <p className="text-[11px] text-red-300 break-words">{t('walletUnsupported', { wallet: connectError.walletName })}</p>
+              <p className="text-[10px] text-red-300/70 break-words font-mono">{connectError.missing.join(', ')}</p>
+              <p className="text-[10px] text-white/70">{t('walletUnsupportedSub')}</p>
+            </div>
+          ) : (
+            <p className="text-[11px] text-red-400 text-center break-words">{connectError.message}</p>
+          )
         )}
       </div>
     </div>

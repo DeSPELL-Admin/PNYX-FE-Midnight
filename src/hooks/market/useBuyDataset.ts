@@ -73,10 +73,15 @@ export const useBuyDataset = (
         // payOperator 는 submit 전에 txId 를 뽑으므로 여기서 throw 되면 돈은 나가지 않았다.
         setPhase('paying');
         let txId: string | undefined;
-        try {
-          txId = await payOperator(wallet.api, order.payTo, order.tokenTypeRaw, BigInt(order.priceUnits));
-        } catch (payError) {
-          console.warn('[useBuyDataset] in-page payment unavailable — falling back to manual pay:', payError);
+        if (!wallet.caps.transfer) {
+          // 지갑이 makeTransfer 자체를 제공하지 않는다(연결 시 probe 결과) — 시도 없이 수동 결제로.
+          console.info('[useBuyDataset] wallet has no makeTransfer — using manual pay');
+        } else {
+          try {
+            txId = await payOperator(wallet.api, order.payTo, order.tokenTypeRaw, BigInt(order.priceUnits));
+          } catch (payError) {
+            console.warn('[useBuyDataset] in-page payment unavailable — falling back to manual pay:', payError);
+          }
         }
 
         if (txId) {

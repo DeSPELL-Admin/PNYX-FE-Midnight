@@ -19,6 +19,48 @@ export class WalletNotFoundError extends Error {
   }
 }
 
+/**
+ * 커넥터 v4 를 구현했다고 해서 모든 메서드를 제공하는 건 아니다(지갑마다 지원 범위가 다르다).
+ * 연결 직후 검사해 안 되는 지갑은 여기서 막는다 — 로그인(signData)이나 투표 제출(balance)
+ * 단계까지 가서 뒤늦게 실패하지 않도록.
+ */
+export const REQUIRED_WALLET_METHODS = [
+  'getConnectionStatus',
+  'getConfiguration',
+  'getUnshieldedAddress',
+  'getShieldedAddresses',
+  'signData',
+  'balanceUnsealedTransaction',
+  'submitTransaction',
+] as const satisfies readonly (keyof ConnectedAPI)[];
+
+/** 없어도 연결은 허용하되 해당 기능만 비활성화하는 메서드 */
+export const OPTIONAL_WALLET_METHODS = ['makeTransfer'] as const satisfies readonly (keyof ConnectedAPI)[];
+
+export interface WalletCapabilities {
+  /** `makeTransfer` — 마켓 in-page 결제. false 면 수동 결제(ManualPayCard)로 바로 간다. */
+  transfer: boolean;
+}
+
+export class WalletUnsupportedError extends Error {
+  readonly walletName: string;
+  readonly missing: readonly string[];
+  constructor(walletName: string, missing: readonly string[]) {
+    super(`${walletName} does not support the wallet features PNYX needs (${missing.join(', ')})`);
+    this.name = 'WalletUnsupportedError';
+    this.walletName = walletName;
+    this.missing = missing;
+  }
+}
+
+/** 필수 메서드가 하나라도 빠지면 throw, 아니면 선택 기능 지원 여부를 돌려준다. */
+export function probeCapabilities(api: ConnectedAPI, walletName: string): WalletCapabilities {
+  const has = (m: string) => typeof (api as unknown as Record<string, unknown>)[m] === 'function';
+  const missing = REQUIRED_WALLET_METHODS.filter((m) => !has(m));
+  if (missing.length > 0) throw new WalletUnsupportedError(walletName, missing);
+  return { transfer: has('makeTransfer') };
+}
+
 /** 설치된 호환 지갑 목록. 같은 지갑이 여러 API 버전을 주입할 수 있어 rdns 로 중복 제거한다. */
 export function listWallets(): InitialAPI[] {
   if (typeof window === 'undefined' || !window.midnight) return [];
@@ -53,12 +95,16 @@ export interface ConnectedWallet {
   walletName: string;
   /** 지갑 식별자(reverse DNS) — 자동 재연결 시 같은 지갑을 고르는 데 쓴다 */
   walletRdns: string;
+  /** 선택 기능 지원 여부 — 필수 기능은 연결 시점에 이미 검증됐다 */
+  caps: WalletCapabilities;
 }
 
 /** `rdns` 생략 시 감지된 첫 지갑에 연결한다(지갑이 하나뿐일 때). */
 export async function connectWallet(rdns?: string): Promise<ConnectedWallet> {
   const initial = await waitForWallet(rdns);
   const api = await initial.connect(MIDNIGHT_NETWORK_ID);
+  // 아래에서 바로 쓰는 getConnectionStatus 포함, 필수 메서드가 없으면 여기서 끝낸다.
+  const caps = probeCapabilities(api, initial.name);
   const status = await api.getConnectionStatus();
   if (status.status !== 'connected') throw new Error('Wallet refused the connection');
   if (status.networkId !== MIDNIGHT_NETWORK_ID) {
@@ -72,6 +118,7 @@ export async function connectWallet(rdns?: string): Promise<ConnectedWallet> {
     encryptionPublicKey: shielded.shieldedEncryptionPublicKey,
     walletName: initial.name,
     walletRdns: initial.rdns,
+    caps,
   };
 }
 

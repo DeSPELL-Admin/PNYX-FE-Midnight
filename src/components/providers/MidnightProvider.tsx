@@ -15,7 +15,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { InitialAPI } from '@midnight-ntwrk/dapp-connector-api';
-import { connectWallet, listWallets, type ConnectedWallet } from '~/lib/midnight/connector';
+import { connectWallet, listWallets, WalletUnsupportedError, type ConnectedWallet } from '~/lib/midnight/connector';
+import { clearProofServerInfo } from '~/lib/midnight/proofServer';
 import { MIDNIGHT_CHAIN_ID } from '~/lib/midnight/config';
 import { bumpIdentityGeneration } from '~/lib/api/client';
 import { logout } from '~/lib/api/auth';
@@ -123,6 +124,10 @@ export function MidnightProvider({ children }: { children: React.ReactNode }) {
       setError(err);
       setStatus('disconnected');
       setWallet(undefined);
+      // 기능이 부족한 지갑을 기억해 두면 재방문마다 자동 재연결이 같은 이유로 실패한다.
+      if (err instanceof WalletUnsupportedError) {
+        try { localStorage.removeItem(RECONNECT_KEY); } catch { /* ignore */ }
+      }
       throw err;
     } finally {
       connectingRef.current = false;
@@ -163,6 +168,11 @@ export function MidnightProvider({ children }: { children: React.ReactNode }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wallets]);
+
+  // 지갑이 바뀌거나 빠지면 proof server 배지를 비운다 — 새 지갑의 providers 가 조립될 때 다시 채워진다.
+  useEffect(() => {
+    clearProofServerInfo();
+  }, [wallet?.unshieldedAddress]);
 
   const isWalletAvailable = wallets.length > 0;
 

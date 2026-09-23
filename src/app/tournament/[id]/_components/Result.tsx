@@ -278,20 +278,20 @@ export default function Result({ tournamentId, winner, onRetry, finalArray, fina
                             <div className="flex flex-col items-center justify-center w-full gap-2.5">
                                 {currentStep >= 0 && (
                                     // 진행 스테퍼 — 어느 단계에서 기다리는지 + 예상 시간. 버튼 문구는 고정(SUBMITTING…).
-                                    <div className="flex items-center gap-2 text-[12px] text-brand-primary-300" aria-live="polite">
+                                    <div className="flex items-center gap-2 text-[12px] font-medium text-brand-primary-900" aria-live="polite">
                                         <div className="flex gap-[5px]" aria-hidden="true">
                                             {STEPS.map((s, i) => (
                                                 <span
                                                     key={s}
                                                     className={`block w-[7px] h-[7px] rounded-full ${
-                                                        i < currentStep ? 'bg-white' : i === currentStep ? 'bg-white ring-[3px] ring-white/20' : 'bg-brand-primary-700'
+                                                        i < currentStep ? 'bg-brand-primary-900' : i === currentStep ? 'bg-brand-primary-900 ring-[3px] ring-brand-primary-900/20' : 'bg-brand-primary-900/25'
                                                     }`}
                                                 />
                                             ))}
                                         </div>
                                         <span>{stepLabel(currentStep).label}</span>
                                         {stepLabel(currentStep).eta !== undefined && (
-                                            <span className="text-brand-primary-600">{tTournament('stepEta', { s: stepLabel(currentStep).eta as number })}</span>
+                                            <span className="text-brand-primary-700 font-normal">{tTournament('stepEta', { s: stepLabel(currentStep).eta as number })}</span>
                                         )}
                                     </div>
                                 )}
@@ -307,13 +307,13 @@ export default function Result({ tournamentId, winner, onRetry, finalArray, fina
                                 {feeBlocked && (
                                     // 수수료 DUST 가 아직 없다 — 원인 한 줄 + 재확인 액션을 같은 줄에, 설명은 한 문장.
                                     <>
-                                        <div className="w-full flex items-center justify-between gap-2 rounded-[10px] border border-point-yellow/35 bg-point-yellow/[0.08] px-3 py-2 text-[12px] text-point-yellow">
+                                        <div className="w-full flex items-center justify-between gap-2 rounded-[10px] border border-[#5D3612]/30 bg-[#5D3612]/10 px-3 py-2 text-[12px] text-[#5D3612]">
                                             <span className="font-semibold">⚠ {feeStatus === 'no_night' ? tTournament('dustNoNight') : tTournament('dustGenerating')}</span>
-                                            <button type="button" onClick={handleRecheckFee} disabled={isCheckingFee} className="shrink-0 font-semibold text-white underline underline-offset-2 disabled:opacity-50">
+                                            <button type="button" onClick={handleRecheckFee} disabled={isCheckingFee} className="shrink-0 font-semibold text-brand-primary-900 underline underline-offset-2 disabled:opacity-50">
                                                 {isCheckingFee ? tTournament('dustRechecking') : tTournament('dustRecheck')}
                                             </button>
                                         </div>
-                                        <p className="text-center text-[12px] text-brand-primary-400 px-2">{tTournament('dustHint')}</p>
+                                        <p className="text-center text-[12px] text-brand-primary-700 px-2">{tTournament('dustHint')}</p>
                                     </>
                                 )}
                                 {proofServer && (
@@ -323,14 +323,14 @@ export default function Result({ tournamentId, winner, onRetry, finalArray, fina
                                             type="button"
                                             onClick={() => setProofOpen((v) => !v)}
                                             aria-expanded={proofOpen}
-                                            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.08] px-2.5 py-1 text-[12px] text-brand-primary-300"
+                                            className="inline-flex items-center gap-1.5 rounded-full border border-brand-primary-900/20 bg-brand-primary-900/10 px-2.5 py-1 text-[12px] font-medium text-brand-primary-900"
                                         >
                                             <span aria-hidden="true">🔒</span>
                                             {tTournament(`proofBadge_${proofServer.source}`)}
                                             <span aria-hidden="true" className={`text-[10px] opacity-70 transition-transform ${proofOpen ? 'rotate-180' : ''}`}>▼</span>
                                         </button>
                                         {proofOpen && (
-                                            <p className="text-center text-[12px] text-brand-primary-400 px-2">
+                                            <p className="text-center text-[12px] text-brand-primary-700 px-2">
                                                 {tTournament(`proofDisclosure_${proofServer.source}`, { host: safeHost(proofServer.url) })}
                                             </p>
                                         )}

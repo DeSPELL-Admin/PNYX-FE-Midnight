@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { ArrowLeft } from 'lucide-react';
+import Button from '~/components/ui/Button';
 import IconButton from '~/components/ui/IconButton';
 import { Spinner } from '~/components/ui/Spinner';
 import { useChainId } from '~/hooks/wallet';
@@ -95,6 +96,17 @@ export default function MarketOrderDetailPage({ params }: { params: Promise<{ id
               <div className="rounded-xl border border-red-400/40 bg-red-500/10 p-3">
                 <p className="break-words text-[12px] text-red-300">{order.error || tMarket('orderFailedGeneric')}</p>
               </div>
+            )}
+
+            {order.status === 'FULFILLED' && (
+              <Button
+                variant="ctaYellow"
+                size="sm"
+                fullWidth
+                onClick={() => router.push(`/market/orders/${order.orderId}/data`)}
+              >
+                {tMarket('dataViewButton')}
+              </Button>
             )}
 
             {order.status === 'FULFILLED' && chainId !== undefined && (

@@ -28,6 +28,16 @@ Dockerfile
 .dockerignore
 README.md
 
-# 주의: .env* 는 의도적으로 제외하지 않는다.
-#  서버 CI 가 워크스페이스에 .env 를 생성하고 next build 가 빌드타임에 이를 읽어
-#  NEXT_PUBLIC_* 를 번들에 인라인하므로, 제외하면 환경변수가 비게 된다.
+# env 파일: 프로덕션 빌드용만 남기고 로컬/개발용은 제외한다.
+#  next build(NODE_ENV=production)는 .env.production.local > .env.local > .env.production
+#  순으로 읽고 먼저 정의된 값이 이긴다. .env.local 이 컨텍스트에 있으면 dev 값
+#  (localhost API·development 모드·127.0.0.1 proof)이 .env.production 을 덮어써
+#  프로덕션 번들에 인라인되므로 반드시 배제한다. CI 는 .env.production 또는
+#  .env.production.local 에 실제 값(proof server URL 등)을 주입한다.
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.example
+# 유지: .env.production, .env.production.local (CI 주입 대상)

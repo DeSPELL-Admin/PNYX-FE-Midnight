@@ -1,10 +1,10 @@
 'use client';
 
 /**
- * 수동 결제 카드 — Lace 확장의 dApp 전송 API(makeTransfer/makeIntent)가 현재 버전에서 깨져 있어
- * (sender undefined / Unexpected transaction state), 사용자가 Lace 지갑 UI 로 직접 송금하고
- * 여기서 확인만 누르는 우회 경로. payOperator 가 성공하는 Lace 버전에서는 이 카드가 보일 일이 없다
- * (자동 결제가 pay 까지 마치고 PAID 로 넘어온다).
+ * 수동 결제 카드 — 인페이지 결제(payOperator)가 실패했거나 지갑이 makeTransfer 를 지원하지 않을 때,
+ * 사용자가 지갑 UI(Lace / 1AM)로 직접 송금하고 여기서 확인만 누르는 우회 경로.
+ * payOperator 가 정상 동작하면 이 카드는 보이지 않는다(자동 결제가 pay 까지 마치고 PAID 로 넘어온다).
+ * 송금은 나갔는데 BE 기록만 실패한 경우엔 useBuyDataset 이 남긴 txId 가 프리필된다 — 재송금 방지.
  */
 
 import { useCallback, useState } from 'react';
@@ -13,10 +13,12 @@ import Button from '~/components/ui/Button';
 import { api } from '~/lib/api';
 import type { MarketOrder } from '~/lib/api/market';
 import { formatTNight } from '../../../_lib/format';
+import { takePendingPaymentTx } from '~/hooks/market/pendingPaymentTx';
 
 export default function ManualPayCard({ chainId, order, onPaid }: { chainId: number; order: MarketOrder; onPaid: () => void }) {
   const tMarket = useTranslations('market');
-  const [txId, setTxId] = useState('');
+  // 자동 결제가 송금까지는 마쳤는데 BE 기록만 실패한 경우 useBuyDataset 이 남긴 txId 를 프리필 — 재송금 방지.
+  const [txId, setTxId] = useState(() => takePendingPaymentTx(order.orderId) ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [copied, setCopied] = useState<'address' | 'amount' | null>(null);
 

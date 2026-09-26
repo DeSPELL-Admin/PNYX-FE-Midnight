@@ -10,6 +10,7 @@ import { useMarketProducts } from '~/hooks/market';
 import { useBuyDataset } from '~/hooks/market/useBuyDataset';
 import { useToast } from '~/hooks/use-toast';
 import ProductCard from './_components/ProductCard';
+import MyPurchases from './_components/MyPurchases';
 
 // viem/unknown 에러를 사람이 읽을 수 있는 문자열로 안전 내로잉 (Result.tsx 의 resolveErrorMessage 와 동일 패턴).
 function resolveErrorMessage(err: unknown): string {
@@ -90,6 +91,8 @@ export default function MarketPage() {
             ))}
           </div>
         )}
+
+        {!isLoading && <div className="mt-4"><MyPurchases /></div>}
       </div>
     </div>
   );

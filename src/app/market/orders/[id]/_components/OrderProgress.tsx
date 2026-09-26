@@ -41,6 +41,8 @@ export default function OrderProgress({ order }: OrderProgressProps) {
   const tMarket = useTranslations('market');
   const activeIndex = resolveStepIndex(order);
   const isFailed = order.status === 'FAILED';
+  // FULFILLED 는 진행 중인 스텝이 없다 — 마지막 'done' 포함 전부 체크(스피너 없음).
+  const isFulfilled = order.status === 'FULFILLED';
   const failedIndex = Math.max(activeIndex, 0);
 
   const stepLabel = (key: StepKey) => {
@@ -57,8 +59,8 @@ export default function OrderProgress({ order }: OrderProgressProps) {
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-brand-primary-700 bg-brand-primary-800/60 p-4">
       {STEP_KEYS.map((key, i) => {
-        const isDone = !isFailed && i < activeIndex;
-        const isCurrent = !isFailed && i === activeIndex;
+        const isDone = !isFailed && (isFulfilled || i < activeIndex);
+        const isCurrent = !isFailed && !isFulfilled && i === activeIndex;
         const isFailedHere = isFailed && i === failedIndex;
         const isFuture = !isDone && !isCurrent && !isFailedHere;
 

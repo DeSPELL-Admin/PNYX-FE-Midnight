@@ -34,22 +34,43 @@ export const ZK_CONFIG_BASE_URL = (name: 'TournamentFinalizer' | 'VotePointManag
   `${typeof window !== 'undefined' ? window.location.origin : ''}/zk/${name}`;
 
 /**
- * 지갑 설정에 proof server 가 없을 때 쓰는 폴백. 데모에선 PNYX 가 호스팅한 proof server 를
- * 가리킨다(witness 는 브라우저에 남고 증명만 위임 — SPEC §7 참고).
+ * proof server 후보. 회로 증명은 witness(userSecret·voteSalt·bracket)를 proof server 에 보내 만든다 —
+ * 즉 어느 서버를 고르느냐가 곧 "누가 내 비공개 입력을 보는가"다. 우선순위는
+ * `proofServer.ts#resolveProofServer` 참고: 사용자 지갑에 설정된 서버 > env(PNYX 호스팅, 데모) > 로컬.
  */
-export const FALLBACK_PROOF_SERVER_URL =
-  process.env.NEXT_PUBLIC_MIDNIGHT_PROOF_SERVER_URL ?? 'http://127.0.0.1:6300';
+export const ENV_PROOF_SERVER_URL: string | undefined = process.env.NEXT_PUBLIC_MIDNIGHT_PROOF_SERVER_URL || undefined;
+export const LOCAL_PROOF_SERVER_URL = 'http://127.0.0.1:6300';
+
+/**
+ * Midnight 재단이 운영하는 공용 proof server(Lace 기본값). dApp 프루빙 요청을 403 으로 거부하므로
+ * 지갑 설정이 이걸 가리키면 "설정 없음"으로 취급하고 다음 후보로 넘어간다. URL 로 파싱조차 안 되는
+ * 값도 쓸 수 없으니 같은 취급.
+ */
+export function isPublicMidnightProofServer(url: string): boolean {
+  try {
+    return /^proof-server(\.[a-z0-9-]+)*\.midnight\.network$/i.test(new URL(url).hostname);
+  } catch {
+    return true;
+  }
+}
 
 export const TOURNAMENT_FINALIZER_ADDRESS: string | undefined =
   process.env.NEXT_PUBLIC_CONTRACT_TOURNAMENT_FINALIZER_MIDNIGHT || undefined;
 
 /**
- * 인덱서 URL — 지갑 없이(구매자 로그인 없이도) 온체인 라이선스/커밋을 조회할 때 쓴다(license.ts).
- * 지갑 연결 흐름은 providers.ts 처럼 `wallet.api.getConfiguration()` 의 indexerUri 를 우선 쓰고,
- * 이 상수는 그게 없는 조회 전용 경로의 기본값이다. 기본값은 preprod 공식 인덱서.
+ * 인덱서 URL — 컨트랙트 공개 상태(grant leaf, 라이선스/커밋) 조회는 지갑 유무와 무관하게 이걸 쓴다
+ * (license.ts, providers.ts). 지갑이 알려주는 indexerUri 는 지갑/프로필마다 달라 같은 preprod 인데도
+ * 우리 컨트랙트 상태가 안 보이는 일이 있었다(leaf 는 온체인에 있는데 FE 만 타임아웃). 기본값은 preprod 공식 인덱서.
+ */
+/**
+ * 브라우저에선 같은 오리진의 프록시(next.config.ts rewrites → 공식 인덱서)를 쓴다 — 공식 인덱서는 브라우저
+ * origin 에 CORS 헤더를 주지 않는다(특히 503 에러 페이지). env 로 직접 URL 을 주면 그걸 우선한다.
  */
 export const MIDNIGHT_INDEXER_URL: string =
-  process.env.NEXT_PUBLIC_MIDNIGHT_INDEXER_URL ?? 'https://indexer.preprod.midnight.network/api/v3/graphql';
+  process.env.NEXT_PUBLIC_MIDNIGHT_INDEXER_URL
+  ?? (typeof window !== 'undefined'
+    ? `${window.location.origin}/midnight-indexer/graphql`
+    : 'https://indexer.preprod.midnight.network/api/v4/graphql');
 
 export const MIDNIGHT_INDEXER_WS_URL: string =
-  process.env.NEXT_PUBLIC_MIDNIGHT_INDEXER_WS_URL ?? 'wss://indexer.preprod.midnight.network/api/v3/graphql/ws';
+  process.env.NEXT_PUBLIC_MIDNIGHT_INDEXER_WS_URL ?? 'wss://indexer.preprod.midnight.network/api/v4/graphql/ws';

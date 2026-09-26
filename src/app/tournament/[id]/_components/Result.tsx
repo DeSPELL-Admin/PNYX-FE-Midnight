@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useSyncExternalStore } from 'react';
 import { useTranslations } from 'next-intl';
 import { useQueryClient } from '@tanstack/react-query';
 import Button from '~/components/ui/Button';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { useFinalizeTournament, type FinalizePhase } from '~/hooks/contract/useFinalizeTournament';
+import { DustNotReadyError, useFinalizeTournament, type FinalizePhase } from '~/hooks/contract/useFinalizeTournament';
+import { getProofServerInfo, getProofServerInfoServerSnapshot, safeHost, subscribeProofServerInfo } from '~/lib/midnight/proofServer';
+import { classifyWalletError } from '~/lib/midnight/dust';
 import { useAccount, useChainId } from '~/hooks/wallet';
 import { useTournament } from '~/hooks';
 import { tournamentKeys } from '~/hooks/tournaments';
@@ -28,9 +30,11 @@ interface ResultProps {
     // LWA 결과 (임시 디버그용)
     finalArray?: number[];
     finalHex?: string;
+    /** 피드에서 현재 보이는 게임인지 — 보이지 않는 완료 게임은 grant 를 미리 보내지 않는다(온체인 비용). */
+    isActive?: boolean;
 }
 
-export default function Result({ tournamentId, winner, onRetry, finalArray, finalHex }: ResultProps) {
+export default function Result({ tournamentId, winner, onRetry, finalArray, finalHex, isActive = true }: ResultProps) {
     const router = useRouter();
     const tTournament = useTranslations('tournament');
     const tCommon = useTranslations('common');
@@ -38,6 +42,8 @@ export default function Result({ tournamentId, winner, onRetry, finalArray, fina
     const [txStatus, setTxStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
     // 서버에서 무효화된 이어하기(stale) 여부 — true 면 Submit 대신 안내 + "새 게임 시작" 패널을 띄운다.
     const [isStale, setIsStale] = useState(false);
+    // BE finalize-confirm 이 재시도 끝에 실패 — 투표는 온체인이지만 포인트 반영이 늦을 수 있음을 알린다.
+    const [confirmFailed, setConfirmFailed] = useState(false);
 
     const chainId = useChainId();
     const { address } = useAccount();
@@ -61,24 +67,37 @@ export default function Result({ tournamentId, winner, onRetry, finalArray, fina
     // viem 에러는 shortMessage 우선 → message → 마지막 String(err) 순.
     // description 이 절대 비거나 undefined 가 되지 않도록 보장한다.
     const resolveErrorMessage = useCallback((err: unknown): string => {
+        // 사전 DUST 게이트에서 끊긴 경우 — 원인별로(NIGHT 미등록 / 생성 대기) 카드와 같은 문구를 쓴다.
+        if (err instanceof DustNotReadyError) {
+            return err.state === 'no_night' ? tTournament('dustNoNight') : tTournament('dustGenerating');
+        }
+        // 지갑 에러는 원문이 기술적이라("could not balance dust") 분류별로 사용자 문구로 바꾼다.
+        // session_expired 는 *지갑 확장* 연결이 끊긴 것 — 앱 로그인 세션(sessionExpired)과 다르다.
+        switch (classifyWalletError(err)) {
+            case 'dust_insufficient': return tError('dustInsufficient');
+            case 'dust_rejected': return tError('dustRejected');
+            case 'session_expired': return tError('walletReconnect');
+            case 'rejected': return tError('userRejection');
+            default: break;
+        }
         if (err && typeof err === 'object') {
             const e = err as { shortMessage?: unknown; message?: unknown };
             if (typeof e.shortMessage === 'string' && e.shortMessage) return e.shortMessage;
             if (typeof e.message === 'string' && e.message) return e.message;
         }
         return String(err) || tError('unknownError');
-    }, [tError]);
+    }, [tError, tTournament]);
 
-    const { finalizeTournament, phase, txId } = useFinalizeTournament(chainId, () => {
+    // 어느 proof server 가 이 투표의 witness 를 받는지 — prewarm 이 providers 를 조립하면 채워진다.
+    const proofServer = useSyncExternalStore(subscribeProofServerInfo, getProofServerInfo, getProofServerInfoServerSnapshot);
+
+    const { finalizeTournament, prepareFinalize, phase, feeStatus, isCheckingFee, checkFee } = useFinalizeTournament(chainId, () => {
+        // 트랜잭션 제출 직후 — 투표는 이미 온체인이므로 여기서 성공 화면으로 전환한다.
+        // 포인트 반영(BE confirm)과 escrow 는 백그라운드로 이어지고 `phase` 가 'done' 이 되면 끝난다.
         setTxStatus('success');
         // 온체인 제출 성공 → 저장된 진행 상태 삭제 (이어하기 목록에서 제거)
         removeGameProgress(address, chainId, Number(tournamentId));
         fireCelebrationConfetti();
-        // finalize 후 서버측 상태 동기화: 리스트의 per-user `status` 가 completed 로 뒤집히고
-        // 포인트/세션(/me) 잔액이 갱신되도록 관련 쿼리를 무효화한다.
-        queryClient.invalidateQueries({ queryKey: tournamentKeys.all });
-        // 포인트는 세션 쿼리(authSessionKey)에 통합 — 세션 무효화로 함께 갱신된다.
-        queryClient.invalidateQueries({ queryKey: authSessionKey(address) });
     }, ({ error }) => {
         toast({
             variant: "destructive",
@@ -86,7 +105,40 @@ export default function Result({ tournamentId, winner, onRetry, finalArray, fina
             description: resolveErrorMessage(error),
         });
         setTxStatus('error');
+    }, ({ confirmed }) => {
+        if (!confirmed) setConfirmFailed(true);
+        // BE finalize-confirm 까지 끝난 뒤 서버측 상태 동기화: 리스트의 per-user `status` 가 completed 로
+        // 뒤집히고 포인트/세션(/me) 잔액이 갱신되도록 관련 쿼리를 무효화한다.
+        queryClient.invalidateQueries({ queryKey: tournamentKeys.all });
+        // 포인트는 세션 쿼리(authSessionKey)에 통합 — 세션 무효화로 함께 갱신된다.
+        queryClient.invalidateQueries({ queryKey: authSessionKey(address) });
     })
+
+    // Result 화면에 도착하자마자 grant 요청과 세션 준비를 시작한다 — 사용자가 우승자를 보는 동안
+    // BE 증명·블록 대기(~30s)가 흘러가므로 Submit 시점엔 증명만 남는다. 같은 브라켓이면 한 번만 보낸다.
+    // 의존성은 값이 안정적인 원시 타입만 — finalArray 는 렌더마다 새 배열이라 넣으면 매 렌더 재실행된다.
+    const bracketSize = finalArray?.length ?? 0;
+    useEffect(() => {
+        if (!isActive || txStatus !== 'idle' || isStale || !finalHex || bracketSize === 0) return;
+        prepareFinalize({
+            tournamentId: Number(tournamentId),
+            tournamentData: finalHex as `0x${string}`,
+            bracketSize,
+        });
+    }, [isActive, txStatus, isStale, finalHex, bracketSize, tournamentId, prepareFinalize]);
+
+    // DUST 가 아직 없으면(NIGHT 미등록 / 생성 대기) Submit 을 막고 30s 마다 다시 읽는다 — 생성되는 즉시 풀린다.
+    const feeBlocked = feeStatus === 'no_night' || feeStatus === 'generating';
+    useEffect(() => {
+        if (!feeBlocked || txStatus === 'pending') return;
+        const id = setInterval(() => { void checkFee().catch(() => { /* 다음 주기에 재시도 */ }); }, 30_000);
+        return () => clearInterval(id);
+    }, [feeBlocked, txStatus, checkFee]);
+    const handleRecheckFee = useCallback(() => { void checkFee().catch(() => { /* 카드가 그대로 남는다 */ }); }, [checkFee]);
+
+    // 성공 화면에서 confirm/escrow 가 아직 진행 중인지 — 포인트 "반영 중" 표시용
+    const isSettling = txStatus === 'success' && phase !== 'done';
+    const settleNote = isSettling ? tTournament('pointsPending') : confirmFailed ? tTournament('pointsDelayed') : '';
 
     const handleSendTransaction = useCallback(async () => {
         // 제출할 데이터가 없으면(우승자/LWA 결과 누락) 조용히 return 하지 않고 안내한다.
@@ -137,19 +189,32 @@ export default function Result({ tournamentId, winner, onRetry, finalArray, fina
             });
             setTxStatus('error');
         }
-    }, [winner, finalHex, tournamentId, finalizeTournament, toast, tError, resolveErrorMessage]);
+    }, [winner, finalHex, finalArray, tournamentId, finalizeTournament, toast, tError, resolveErrorMessage]);
 
-    const phaseLabel = (p: FinalizePhase) => {
+    // 진행 스테퍼 — 사용자 관점의 4단계. granting/indexing 은 둘 다 "온체인 기록 대기"라 한 단계로 묶는다.
+    // 예상 시간은 실측 기준(온체인 기록 ≈ 포함 6s + 최종성 12s, 증명 ≈ 30s) — 없으면 멈춘 것처럼 보인다.
+    const STEPS = ['recording', 'loading', 'proving', 'confirming'] as const;
+    const stepOf = (p: FinalizePhase): number => {
         switch (p) {
-            case 'granting': return tTournament('phaseGranting');
-            case 'joining': return tTournament('phaseJoining');
-            case 'proving': return tTournament('phaseProving');
-            case 'submitting': return tTournament('phaseSubmitting');
-            case 'confirming': return tTournament('phaseConfirming');
-            case 'escrowing': return tTournament('phaseEscrowing');
-            default: return tCommon('submit');
+            case 'granting': case 'indexing': return 0;
+            case 'joining': return 1;
+            case 'proving': return 2;
+            case 'confirming': case 'done': return 3;
+            default: return -1;
         }
     };
+    const stepLabel = (i: number) => {
+        switch (STEPS[i]) {
+            case 'recording': return { label: tTournament('stepRecording'), eta: 15 };
+            case 'loading': return { label: tTournament('stepLoading'), eta: undefined };
+            case 'proving': return { label: tTournament('stepProving'), eta: 30 };
+            default: return { label: tTournament('stepConfirming'), eta: undefined };
+        }
+    };
+    const currentStep = txStatus === 'pending' ? stepOf(phase) : -1;
+
+    // 프라이버시 고지(어느 서버가 내 선택을 받는가)는 배지 안에 접어 둔다 — 항상 펼쳐 두면 버튼 아래가 길어져 안 읽힌다.
+    const [proofOpen, setProofOpen] = useState(false);
 
     return (
         <div className="w-full h-full overflow-y-auto">
@@ -211,18 +276,66 @@ export default function Result({ tournamentId, winner, onRetry, finalArray, fina
                                 </Button>
                             </div>
                         ) : (
-                            <div className="flex flex-col items-center justify-center w-full gap-3">
+                            <div className="flex flex-col items-center justify-center w-full gap-2.5">
+                                {currentStep >= 0 && (
+                                    // 진행 스테퍼 — 어느 단계에서 기다리는지 + 예상 시간. 버튼 문구는 고정(SUBMITTING…).
+                                    <div className="flex items-center gap-2 text-[12px] font-medium text-brand-primary-900" aria-live="polite">
+                                        <div className="flex gap-[5px]" aria-hidden="true">
+                                            {STEPS.map((s, i) => (
+                                                <span
+                                                    key={s}
+                                                    className={`block w-[7px] h-[7px] rounded-full ${
+                                                        i < currentStep ? 'bg-brand-primary-900' : i === currentStep ? 'bg-brand-primary-900 ring-[3px] ring-brand-primary-900/20' : 'bg-brand-primary-900/25'
+                                                    }`}
+                                                />
+                                            ))}
+                                        </div>
+                                        <span>{stepLabel(currentStep).label}</span>
+                                        {stepLabel(currentStep).eta !== undefined && (
+                                            <span className="text-brand-primary-700 font-normal">{tTournament('stepEta', { s: stepLabel(currentStep).eta as number })}</span>
+                                        )}
+                                    </div>
+                                )}
                                 <Button
                                     variant="ctaBlack"
                                     className=""
                                     onClick={handleSendTransaction}
                                     isLoading={txStatus === 'pending'}
-                                    disabled={!finalHex}
+                                    disabled={!finalHex || feeBlocked}
                                 >
-                                    {txStatus === 'pending' ? phaseLabel(phase) : tCommon('submit')}
+                                    {txStatus === 'pending' ? tTournament('submitting') : tCommon('submit')}
                                 </Button>
-                                {txStatus === 'pending' && phase === 'proving' && (
-                                    <p className="text-center text-[11px] text-brand-primary-300 px-2">{tTournament('provingHint')}</p>
+                                {feeBlocked && (
+                                    // 수수료 DUST 가 아직 없다 — 원인 한 줄 + 재확인 액션을 같은 줄에, 설명은 한 문장.
+                                    <>
+                                        <div className="w-full flex items-center justify-between gap-2 rounded-[10px] border border-[#5D3612]/30 bg-[#5D3612]/10 px-3 py-2 text-[12px] text-[#5D3612]">
+                                            <span className="font-semibold">⚠ {feeStatus === 'no_night' ? tTournament('dustNoNight') : tTournament('dustGenerating')}</span>
+                                            <button type="button" onClick={handleRecheckFee} disabled={isCheckingFee} className="shrink-0 font-semibold text-brand-primary-900 underline underline-offset-2 disabled:opacity-50">
+                                                {isCheckingFee ? tTournament('dustRechecking') : tTournament('dustRecheck')}
+                                            </button>
+                                        </div>
+                                        <p className="text-center text-[12px] text-brand-primary-700 px-2">{tTournament('dustHint')}</p>
+                                    </>
+                                )}
+                                {proofServer && (
+                                    // 어느 proof server 가 내 선택을 받는지 — 배지 한 줄, 탭하면 호스트와 설명이 펼쳐진다.
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={() => setProofOpen((v) => !v)}
+                                            aria-expanded={proofOpen}
+                                            className="inline-flex items-center gap-1.5 rounded-full border border-brand-primary-900/20 bg-brand-primary-900/10 px-2.5 py-1 text-[12px] font-medium text-brand-primary-900"
+                                        >
+                                            <span aria-hidden="true">🔒</span>
+                                            {tTournament(`proofBadge_${proofServer.source}`)}
+                                            <span aria-hidden="true" className={`text-[10px] opacity-70 transition-transform ${proofOpen ? 'rotate-180' : ''}`}>▼</span>
+                                        </button>
+                                        {proofOpen && (
+                                            <p className="text-center text-[12px] text-brand-primary-700 px-2">
+                                                {tTournament(`proofDisclosure_${proofServer.source}`, { host: safeHost(proofServer.url) })}
+                                            </p>
+                                        )}
+                                    </>
                                 )}
                             </div>
                         )
@@ -231,6 +344,13 @@ export default function Result({ tournamentId, winner, onRetry, finalArray, fina
                     {/* Transaction 성공 후: Home, Retry, Champion 버튼 등장 */}
                     {txStatus === 'success' && (
                         <div className="flex flex-col w-full justify-center items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                            {/* aria-live 영역은 항상 마운트해 두고 텍스트만 바꾼다(스크린리더가 변화를 안정적으로 읽도록) */}
+                            <p
+                                className={`text-center text-[11px] text-brand-primary-300 ${isSettling ? 'animate-pulse motion-reduce:animate-none' : ''} ${settleNote ? '' : 'hidden'}`}
+                                aria-live="polite"
+                            >
+                                {settleNote}
+                            </p>
 
                             <div className="flex items-center justify-center gap-3 w-full">
                                 <Button variant="ctaBlack" className="gap-1 flex-1 rounded-[8px]" onClick={() => router.push(`/hall/${tournamentId}`)}>

@@ -120,9 +120,12 @@ reload, or call `window.__pnyxFinalize.summary()` any time.
 ## Data market (`/market`, hackathon)
 
 - `/market` lists escrow-backed tournaments (BE `/chains/:id/market/products`); Buy runs
-  `useBuyDataset`: createOrder → Lace `makeTransfer` (tNIGHT to `payTo`, `tokenTypeRaw` verbatim from
-  BE, `makeTransfer` does NOT submit — call `api.submitTransaction(tx)` then extract the txId with
-  `Transaction.deserialize(...).identifiers()[0]`) → `pay` → route to `/market/orders/{orderId}`.
+  `useBuyDataset`: createOrder → wallet `makeTransfer` (tNIGHT to `payTo`, `tokenTypeRaw` verbatim from
+  BE) → `pay` → route to `/market/orders/{orderId}`. The `makeTransfer` result differs per wallet
+  (`lib/midnight/payment.ts`): Lace returns `{ tx }` and does NOT submit — extract the txId with
+  `Transaction.deserialize(...).identifiers()[0]` then `api.submitTransaction(tx)`; 1AM balances, signs and
+  submits itself and returns only `{ tx_id }` — use that id and never submit again (assuming `{ tx }` threw
+  `fromHex(undefined)` after the money had left, which dropped users onto `ManualPayCard`).
 - `/market/orders/[id]` polls `useOrder` (3 s, stops on FULFILLED/FAILED) and renders the stage
   timeline; on FULFILLED it loads `VerifyPanel` via `dynamic(..., { ssr:false })` (WASM).
 - `VerifyPanel` verifies WITHOUT trusting the server: downloads the dataset blob, then checks

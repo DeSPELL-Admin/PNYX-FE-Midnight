@@ -43,7 +43,7 @@ Built for the **Midnight Korea Hackathon 2026**. Deployed on Midnight **preprod*
 
 ## Run locally
 
-Prerequisites: Node 22, pnpm (`corepack enable`), Docker (proof server), the backend running on
+Prerequisites: Node **22.13+ or 24** (pnpm 11 refuses older 22.x), pnpm (`corepack enable`), Docker (proof server), the backend running on
 `http://localhost:3001` (see PNYX-BE-Midnight), and a Midnight wallet extension on **preprod** holding
 tNIGHT and DUST (faucet: https://faucet.preprod.midnight.network).
 
